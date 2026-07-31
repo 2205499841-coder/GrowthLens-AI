@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { AIReportSection } from "@/components/ai-report-section";
 import { ChannelBarChart } from "@/components/channel-bar-chart";
 import {
   formatCurrency,
@@ -126,6 +127,15 @@ export function DashboardView({ result }: DashboardViewProps) {
         </div>
         <ChannelTable channels={channels} />
       </DashboardSection>
+
+      <AIReportSection
+        analysis={result}
+        key={[
+          result.metadata.file_name,
+          result.data_quality.valid_user_count,
+          result.metrics.revenue.gmv,
+        ].join("-")}
+      />
     </div>
   );
 }

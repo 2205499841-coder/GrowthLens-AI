@@ -1,4 +1,5 @@
 import type { GrowthAnalysisResult } from "@/types/analysis";
+import type { AIReport } from "@/types/ai-report";
 import type { ExcelParseResult } from "@/types/upload";
 
 const API_BASE_URL =
@@ -42,4 +43,30 @@ export async function analyzeGrowth(
   }
 
   return (await response.json()) as GrowthAnalysisResult;
+}
+
+export async function generateAIReport(
+  result: GrowthAnalysisResult,
+): Promise<AIReport> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/report`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      data_quality: result.data_quality,
+      metrics: result.metrics,
+      funnel: result.funnel,
+      channels: result.channels,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = (await response.json().catch(() => null)) as
+      | { detail?: string }
+      | null;
+    throw new Error(errorBody?.detail ?? "AI 增长报告生成失败，请稍后重试。");
+  }
+
+  return (await response.json()) as AIReport;
 }

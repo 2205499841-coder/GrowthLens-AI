@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.ai_reports import router as ai_reports_router
 from app.api.analysis import router as analysis_router
 from app.api.uploads import router as uploads_router
 from app.core.config import settings
@@ -20,6 +21,7 @@ app.add_middleware(
 
 app.include_router(uploads_router)
 app.include_router(analysis_router)
+app.include_router(ai_reports_router)
 
 
 @app.get("/api/health", tags=["system"])
