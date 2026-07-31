@@ -15,7 +15,14 @@ pnpm dev
 cp .env.local.example .env.local
 ```
 
-上传功能默认调用 <http://localhost:8000/api/uploads/parse>。
+Dashboard 默认调用：
+
+```text
+POST http://localhost:8000/api/analysis/growth
+```
+
+页面展示数据质量、核心指标、用户漏斗、渠道对比图和渠道明细表。
+前端不重复计算业务指标。
 
 ## 检查
 
