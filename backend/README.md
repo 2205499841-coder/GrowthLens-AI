@@ -26,6 +26,17 @@ curl -X POST \
   http://localhost:8000/api/uploads/parse
 ```
 
+增长分析：
+
+```bash
+curl -X POST \
+  -F "file=@../sample_data/portrait_growth_demo.xlsx" \
+  http://localhost:8000/api/analysis/growth
+```
+
+响应统一包含 `data_quality`、`metrics`、`funnel` 和 `channels`。
+详细口径见 [增长分析口径](../docs/growth-analysis.md)。
+
 ## 测试
 
 ```bash

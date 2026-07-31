@@ -35,3 +35,12 @@ growthlens-ai/
 ```
 
 前后端的具体运行命令将在各自目录的 README 中维护。
+
+## 当前进度
+
+- Step 3：Excel 上传与解析；
+- Step 4：数据清洗、增长指标、漏斗及渠道分析；
+- Dashboard 与 AI 功能尚未实现。
+
+写真行业演示数据位于 `sample_data/portrait_growth_demo.xlsx`，可通过
+`sample_data/generate_sample_data.py` 使用固定随机种子重新生成。
