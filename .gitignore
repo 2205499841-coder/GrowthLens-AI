@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+
+# Backend
+backend/.venv/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/**/__pycache__/
+backend/**/*.py[cod]
+backend/.coverage
+
+# Local environment
+.env
+
+# Temporary uploads
+backend/tmp/

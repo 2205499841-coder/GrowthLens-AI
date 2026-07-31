@@ -1,0 +1,1 @@
+"""GrowthLens backend application."""
