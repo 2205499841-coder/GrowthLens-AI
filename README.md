@@ -2,6 +2,8 @@
 
 面向写真行业增长运营场景的 AI 产品经理作品集 Demo。
 
+AI user growth analysis assistant for lifestyle service businesses.
+
 当前开发范围仅包含：
 
 1. Excel 上传
