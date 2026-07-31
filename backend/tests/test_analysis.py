@@ -25,7 +25,18 @@ def test_analyze_growth_excel_returns_unified_structure() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"data_quality", "metrics", "funnel", "channels"}
+    assert set(payload) == {
+        "metadata",
+        "data_quality",
+        "metrics",
+        "funnel",
+        "channels",
+    }
+    assert payload["metadata"] == {
+        "file_name": "growth.xlsx",
+        "data_start_date": "2026-06-01",
+        "data_end_date": "2026-06-03",
+    }
     assert payload["data_quality"]["original_user_count"] == 3
     assert payload["data_quality"]["valid_user_count"] == 3
     assert payload["metrics"]["user_counts"]["registered_users"] == 3

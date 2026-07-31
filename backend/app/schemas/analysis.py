@@ -1,4 +1,12 @@
+from datetime import date
+
 from pydantic import BaseModel, Field
+
+
+class AnalysisMetadata(BaseModel):
+    file_name: str
+    data_start_date: date | None
+    data_end_date: date | None
 
 
 class DataQualitySummary(BaseModel):
@@ -52,6 +60,7 @@ class FunnelAnalysis(BaseModel):
 
 
 class GrowthAnalysisResponse(BaseModel):
+    metadata: AnalysisMetadata
     data_quality: DataQualitySummary
     metrics: GrowthMetrics
     funnel: FunnelAnalysis

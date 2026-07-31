@@ -19,7 +19,7 @@ async def analyze_growth_excel(
     file: UploadFile = File(...),
 ) -> GrowthAnalysisResponse:
     try:
-        validate_file_name(file.filename)
+        file_name = validate_file_name(file.filename)
         file_content = await file.read(settings.max_upload_size_bytes + 1)
 
         if len(file_content) > settings.max_upload_size_bytes:
@@ -30,7 +30,10 @@ async def analyze_growth_excel(
 
         parsed_excel = parse_excel(file_content)
         cleaning_result = clean_growth_data(parsed_excel.data_frame)
-        analysis = build_growth_analysis(cleaning_result)
+        analysis = build_growth_analysis(
+            cleaning_result,
+            file_name=file_name,
+        )
         return GrowthAnalysisResponse.model_validate(analysis)
     except ExcelParseError as exc:
         raise HTTPException(

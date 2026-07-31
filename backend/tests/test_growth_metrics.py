@@ -33,7 +33,15 @@ def test_calculate_metrics_funnel_and_channels() -> None:
         ]
     )
 
-    analysis = build_growth_analysis(clean_growth_data(data_frame))
+    analysis = build_growth_analysis(
+        clean_growth_data(data_frame),
+        file_name="metrics.xlsx",
+    )
+    assert analysis["metadata"] == {
+        "file_name": "metrics.xlsx",
+        "data_start_date": base_time.date(),
+        "data_end_date": (base_time + timedelta(days=2, hours=1)).date(),
+    }
     counts = analysis["metrics"]["user_counts"]
     rates = analysis["metrics"]["conversion_rates"]
     revenue = analysis["metrics"]["revenue"]

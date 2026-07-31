@@ -27,7 +27,10 @@ def test_sample_workbook_has_expected_shape_and_channels() -> None:
 
 def test_sample_workbook_exposes_channel_quality_differences() -> None:
     data_frame = pd.read_excel(SAMPLE_FILE, engine="openpyxl")
-    analysis = build_growth_analysis(clean_growth_data(data_frame))
+    analysis = build_growth_analysis(
+        clean_growth_data(data_frame),
+        file_name=SAMPLE_FILE.name,
+    )
     channels = analysis["channels"]
     total_counts = analysis["metrics"]["user_counts"]
 

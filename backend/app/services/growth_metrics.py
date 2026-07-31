@@ -2,7 +2,11 @@ from typing import Any
 
 import pandas as pd
 
-from app.services.data_cleaner import CORE_CHANNELS, CleaningResult
+from app.services.data_cleaner import (
+    CORE_CHANNELS,
+    TIME_COLUMNS,
+    CleaningResult,
+)
 
 
 FUNNEL_STAGES = (
@@ -15,14 +19,41 @@ FUNNEL_STAGES = (
 )
 
 
-def build_growth_analysis(cleaning_result: CleaningResult) -> dict[str, Any]:
+def build_growth_analysis(
+    cleaning_result: CleaningResult,
+    *,
+    file_name: str,
+) -> dict[str, Any]:
     data_frame = cleaning_result.data_frame
     metrics = calculate_metrics(data_frame)
     return {
+        "metadata": build_analysis_metadata(data_frame, file_name),
         "data_quality": cleaning_result.data_quality_summary,
         "metrics": metrics,
         "funnel": build_funnel(metrics),
         "channels": build_channel_analysis(data_frame),
+    }
+
+
+def build_analysis_metadata(
+    data_frame: pd.DataFrame,
+    file_name: str,
+) -> dict[str, Any]:
+    timestamp_values = pd.concat(
+        [data_frame[column].dropna() for column in TIME_COLUMNS],
+        ignore_index=True,
+    )
+    if timestamp_values.empty:
+        data_start_date = None
+        data_end_date = None
+    else:
+        data_start_date = timestamp_values.min().date()
+        data_end_date = timestamp_values.max().date()
+
+    return {
+        "file_name": file_name,
+        "data_start_date": data_start_date,
+        "data_end_date": data_end_date,
     }
 
 
