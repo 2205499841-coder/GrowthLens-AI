@@ -7,6 +7,7 @@ import type { GrowthAnalysisResult } from "@/types/analysis";
 
 const ACCEPTED_FILE_EXTENSION = ".xlsx";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const DEMO_FILE_PATH = "/sample_data/portrait_growth_demo.xlsx";
 
 interface UploadPanelProps {
   compact?: boolean;
@@ -120,7 +121,11 @@ export function UploadPanel({
 
       {!compact ? (
         <p className="upload-hint">
-          演示文件：sample_data/portrait_growth_demo.xlsx · 最大 10 MB
+          演示文件：
+          <a download href={DEMO_FILE_PATH}>
+            下载 portrait_growth_demo.xlsx
+          </a>
+          <span> · 最大 10 MB</span>
         </p>
       ) : null}
     </section>
