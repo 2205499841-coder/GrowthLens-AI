@@ -23,6 +23,11 @@ def get_cors_origins() -> tuple[str, ...]:
     return tuple(origins) or LOCAL_CORS_ORIGINS
 
 
+def get_optional_secret(name: str) -> str | None:
+    value = os.getenv(name, "").strip()
+    return value or None
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "GrowthLens API"
@@ -32,15 +37,26 @@ class Settings:
     )
     max_upload_size_bytes: int = 10 * 1024 * 1024
     preview_row_limit: int = 10
-    ai_report_provider: str = os.getenv(
-        "AI_REPORT_PROVIDER",
-        "mock",
-    ).strip().lower()
-    openai_api_key: str | None = field(
-        default=os.getenv("OPENAI_API_KEY"),
+    ai_provider: str = field(
+        default_factory=lambda: os.getenv(
+            "AI_PROVIDER",
+            "deepseek",
+        ).strip().lower()
+    )
+    deepseek_api_key: str | None = field(
+        default_factory=lambda: get_optional_secret("DEEPSEEK_API_KEY"),
         repr=False,
     )
-    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-5.6")
+    ai_model: str = field(
+        default_factory=lambda: os.getenv(
+            "AI_MODEL",
+            "deepseek-chat",
+        ).strip()
+    )
+    openai_api_key: str | None = field(
+        default_factory=lambda: get_optional_secret("OPENAI_API_KEY"),
+        repr=False,
+    )
 
 
 settings = Settings()

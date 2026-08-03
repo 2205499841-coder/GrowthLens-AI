@@ -37,18 +37,45 @@ System Prompt 将角色、任务、格式与事实约束分开定义，核心规
 
 ## Provider 设计
 
-`AIReportProvider` 协议将报告业务逻辑与模型供应商隔离。当前
-`AI_REPORT_PROVIDER=mock`，由 `MockAIReportProvider` 根据真实聚合指标
-生成确定性结果，便于本地开发、自动测试和作品集演示。
+`AIReportProvider` 协议将报告业务逻辑与模型供应商隔离。默认
+`AI_PROVIDER=deepseek`，由 `DeepSeekAIReportProvider` 使用 OpenAI SDK
+兼容接口调用 `https://api.deepseek.com`。
 
-已预留环境变量：
+`OpenAICompatibleAIReportProvider` 统一负责 Chat Completions 调用、JSON
+解析、Pydantic Schema 校验与异常转换。DeepSeek 与未来 OpenAI Provider
+只负责各自的密钥、模型和 Base URL 配置，前端与报告输出契约无需变化。
 
-```env
-AI_REPORT_PROVIDER=mock
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.6
+DeepSeek JSON Output 的调用参数为：
+
+```python
+response_format={"type": "json_object"}
 ```
 
-真实 OpenAI Provider 不在本阶段范围内。后续实现时，只需新增一个遵循
-`AIReportProvider` 协议的适配器，并继续返回同一个 `AIReportResponse`
-结构，前端无需修改。
+System Prompt 同时包含 JSON 字段示例，并要求模型不输出 Markdown 或额外
+说明。模型响应还会经过 `AIReportResponse` 校验，并检查渠道名称是否来自
+输入数据。
+
+默认环境变量：
+
+```env
+AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=
+AI_MODEL=deepseek-chat
+```
+
+`DEEPSEEK_API_KEY` 只从运行环境读取，不写入代码或 Git。缺少密钥时接口
+返回 503，不会静默使用虚假报告。
+
+本地开发或自动测试可切换确定性的 Mock Provider：
+
+```env
+AI_PROVIDER=mock
+```
+
+未来切换 OpenAI 时使用同一个输出结构：
+
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=
+AI_MODEL=your-openai-model
+```

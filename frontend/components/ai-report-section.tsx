@@ -57,7 +57,7 @@ export function AIReportSection({
         <div>
           <div className="ai-kicker-row">
             <p className="section-kicker">AI growth report</p>
-            <span className="mock-badge">Mock LLM</span>
+            <span className="provider-badge">AI Provider</span>
           </div>
           <h2>AI 增长报告</h2>
         </div>

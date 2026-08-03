@@ -57,14 +57,18 @@ curl -X POST \
 ```
 
 报告接口只接收增长分析结果中的 `data_quality`、`metrics`、`funnel`
-和 `channels`。当前默认使用本地 Mock Provider，不会调用外部模型：
+和 `channels`。默认通过 OpenAI SDK 兼容方式调用 DeepSeek：
 
 ```bash
-AI_REPORT_PROVIDER=mock uvicorn app.main:app --reload --port 8000
+AI_PROVIDER=deepseek \
+DEEPSEEK_API_KEY=your-key \
+AI_MODEL=deepseek-chat \
+uvicorn app.main:app --reload --port 8000
 ```
 
-`OPENAI_API_KEY` 与 `OPENAI_MODEL` 已预留，但本阶段没有实现或启用真实
-OpenAI Provider。接口与 Prompt 设计见
+本地无 API Key 调试时可临时设置 `AI_PROVIDER=mock`。切换未来 OpenAI
+Provider 时，设置 `AI_PROVIDER=openai`、`OPENAI_API_KEY`，并将
+`AI_MODEL` 改为对应模型。接口与 Prompt 设计见
 [AI 增长报告说明](../docs/ai-growth-report.md)。
 
 ## 测试
