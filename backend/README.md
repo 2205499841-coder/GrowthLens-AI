@@ -14,6 +14,16 @@ python -m pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+未设置 `BACKEND_CORS_ORIGINS` 时，后端默认允许本地前端
+`http://localhost:3000` 和 `http://127.0.0.1:3000`。部署时通过逗号分隔的
+环境变量配置实际前端域名：
+
+```bash
+BACKEND_CORS_ORIGINS=https://your-project.vercel.app,http://localhost:3000 uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+域名会自动去除首尾空格和末尾 `/`，重复值只保留一次。
+
 健康检查：<http://localhost:8000/api/health>
 
 接口文档：<http://localhost:8000/docs>
