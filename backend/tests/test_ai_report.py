@@ -1,14 +1,18 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+import app.services.ai_report as ai_report_service
 from app.main import app
 from app.schemas.ai_report import AIReportRequest
 from app.services.ai_report import (
     AIReportProviderError,
+    DeepSeekAIReportProvider,
     MockAIReportProvider,
+    OpenAIReportProvider,
     build_model_input,
     generate_ai_report,
 )
@@ -24,8 +28,12 @@ SAMPLE_FILE = (
 client = TestClient(app)
 
 
-def test_ai_report_endpoint_returns_structured_mock_report() -> None:
+def test_ai_report_endpoint_returns_structured_report(monkeypatch) -> None:
     request = _sample_request()
+    monkeypatch.setattr(
+        "app.services.ai_report.get_ai_report_provider",
+        lambda: MockAIReportProvider(),
+    )
 
     response = client.post(
         "/api/ai/report",
@@ -55,6 +63,95 @@ def test_ai_report_endpoint_returns_structured_mock_report() -> None:
         action["expected_direction"]
         for action in report["growth_actions"]
     } <= {"increase", "decrease", "maintain"}
+
+
+def test_ai_report_endpoint_reports_missing_deepseek_key(monkeypatch) -> None:
+    request = _sample_request()
+    monkeypatch.setattr(
+        ai_report_service,
+        "settings",
+        SimpleNamespace(
+            ai_provider="deepseek",
+            deepseek_api_key=None,
+            openai_api_key=None,
+            ai_model="deepseek-chat",
+        ),
+    )
+
+    response = client.post(
+        "/api/ai/report",
+        json=request.model_dump(mode="json"),
+    )
+
+    assert response.status_code == 503
+    assert "DEEPSEEK_API_KEY" in response.json()["detail"]
+
+
+def test_deepseek_provider_uses_openai_compatible_json_call() -> None:
+    request = _sample_request()
+    expected_report = MockAIReportProvider().generate(request)
+    fake_client = FakeOpenAIClient(expected_report.model_dump_json())
+    provider = DeepSeekAIReportProvider(
+        api_key="test-key",
+        model="deepseek-chat",
+        client=fake_client,
+    )
+
+    report = generate_ai_report(request, provider=provider)
+
+    assert report == expected_report
+    assert provider.base_url == "https://api.deepseek.com"
+    assert len(fake_client.calls) == 1
+    call = fake_client.calls[0]
+    assert call["model"] == "deepseek-chat"
+    assert call["response_format"] == {"type": "json_object"}
+    assert call["max_tokens"] == 2500
+    assert call["stream"] is False
+    assert call["messages"][0]["role"] == "system"
+    assert "JSON" in call["messages"][0]["content"]
+    assert '"data_quality"' in call["messages"][1]["content"]
+
+
+def test_openai_provider_reuses_same_compatible_adapter() -> None:
+    request = _sample_request()
+    expected_report = MockAIReportProvider().generate(request)
+    fake_client = FakeOpenAIClient(expected_report.model_dump_json())
+    provider = OpenAIReportProvider(
+        api_key="test-key",
+        model="future-openai-model",
+        client=fake_client,
+    )
+
+    report = generate_ai_report(request, provider=provider)
+
+    assert report == expected_report
+    assert provider.base_url is None
+    assert fake_client.calls[0]["model"] == "future-openai-model"
+
+
+def test_deepseek_provider_requires_api_key() -> None:
+    with pytest.raises(
+        AIReportProviderError,
+        match="DEEPSEEK_API_KEY",
+    ):
+        DeepSeekAIReportProvider(
+            api_key=None,
+            model="deepseek-chat",
+        )
+
+
+@pytest.mark.parametrize("content", ["", "not-json", "{}"])
+def test_deepseek_provider_rejects_invalid_structured_output(
+    content: str,
+) -> None:
+    provider = DeepSeekAIReportProvider(
+        api_key="test-key",
+        model="deepseek-chat",
+        client=FakeOpenAIClient(content),
+    )
+
+    with pytest.raises(AIReportProviderError):
+        provider.generate(_sample_request())
 
 
 def test_model_input_contains_only_aggregated_analysis_results() -> None:
@@ -119,3 +216,22 @@ def _sample_request() -> AIReportRequest:
             )
         }
     )
+
+
+class FakeOpenAIClient:
+    def __init__(self, content: str) -> None:
+        self.calls: list[dict] = []
+        self.chat = SimpleNamespace(
+            completions=SimpleNamespace(create=self._create),
+        )
+        self._content = content
+
+    def _create(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content=self._content),
+                )
+            ]
+        )

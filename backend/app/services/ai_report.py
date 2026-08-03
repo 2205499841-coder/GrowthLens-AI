@@ -1,5 +1,7 @@
 import json
-from typing import Protocol
+from typing import Any, Protocol
+
+from pydantic import ValidationError
 
 from app.core.config import settings
 from app.schemas.ai_report import (
@@ -12,17 +14,60 @@ from app.schemas.ai_report import (
 from app.schemas.analysis import FunnelStage, GrowthMetrics
 
 
-SYSTEM_PROMPT = """你是 GrowthLens AI，一名写真行业用户增长分析顾问。
+REPORT_JSON_EXAMPLE = {
+    "summary": "一句话总结",
+    "key_insights": [
+        {
+            "title": "洞察标题",
+            "evidence": "输入数据中的指标依据",
+            "interpretation": "使用可能、推测或假设表达的原因解释",
+            "confidence": "high",
+        },
+        {
+            "title": "第二条洞察标题",
+            "evidence": "输入数据中的指标依据",
+            "interpretation": "需要进一步验证的原因假设",
+            "confidence": "medium",
+        },
+    ],
+    "channel_opportunities": [
+        {
+            "channel": "输入中真实存在的渠道名",
+            "opportunity": "渠道机会说明",
+            "evidence": "渠道指标依据",
+            "confidence": "medium",
+        }
+    ],
+    "growth_actions": [
+        {
+            "action": "可执行增长动作",
+            "target_metric": "目标指标",
+            "expected_direction": "increase",
+        },
+        {
+            "action": "第二个可执行增长动作",
+            "target_metric": "目标指标",
+            "expected_direction": "maintain",
+        },
+    ],
+    "limitations": ["当前聚合数据无法支持的判断"],
+}
+
+
+SYSTEM_PROMPT = f"""你是 GrowthLens AI，一名写真行业用户增长分析顾问。
 
 你只能基于用户消息中提供的 data_quality、metrics、funnel、channels 四类聚合结果生成报告。
 
 输出要求：
-1. 严格遵守给定的结构化 JSON Schema。
+1. 只输出一个合法 JSON 对象，不要输出 Markdown、代码块或额外说明。
 2. summary 用一句话概括整体增长表现。
 3. key_insights 输出 2-3 条，每条包含标题、准确的数据依据、原因假设和置信度。
 4. channel_opportunities 只能引用输入 channels 中存在的渠道。
 5. growth_actions 输出 2-3 条可执行建议，并标明目标指标与预期方向。
 6. limitations 说明仅凭当前数据无法判断的事项。
+
+JSON 结构示例（仅表示字段结构，不是可引用的业务事实）：
+{json.dumps(REPORT_JSON_EXAMPLE, ensure_ascii=False, indent=2)}
 
 事实约束：
 - 不得使用输入之外的数字、渠道、用户画像、行业基准或业务事件。
@@ -48,7 +93,7 @@ def build_model_input(request: AIReportRequest) -> str:
     payload = request.model_dump(mode="json")
     return (
         "请根据以下后端聚合分析结果生成增长报告。"
-        "不要补充输入之外的事实：\n"
+        "不要补充输入之外的事实，只返回 JSON：\n"
         f"{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
     )
 
@@ -65,15 +110,154 @@ def generate_ai_report(
 
 
 def get_ai_report_provider() -> AIReportProvider:
-    if settings.ai_report_provider == "mock":
-        return MockAIReportProvider()
-    if settings.ai_report_provider == "openai":
-        raise AIReportProviderError(
-            "OpenAI Provider 尚未启用，请将 AI_REPORT_PROVIDER 设置为 mock。"
+    if settings.ai_provider == "deepseek":
+        return DeepSeekAIReportProvider(
+            api_key=settings.deepseek_api_key,
+            model=settings.ai_model,
         )
+    if settings.ai_provider == "openai":
+        return OpenAIReportProvider(
+            api_key=settings.openai_api_key,
+            model=settings.ai_model,
+        )
+    if settings.ai_provider == "mock":
+        return MockAIReportProvider()
     raise AIReportProviderError(
-        f"不支持的 AI_REPORT_PROVIDER：{settings.ai_report_provider}"
+        f"不支持的 AI_PROVIDER：{settings.ai_provider}"
     )
+
+
+class OpenAICompatibleAIReportProvider:
+    """Shared adapter for providers exposing OpenAI Chat Completions."""
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        display_name: str,
+        api_key: str | None,
+        api_key_env: str,
+        model: str,
+        base_url: str | None = None,
+        client: Any | None = None,
+    ) -> None:
+        if not api_key:
+            raise AIReportProviderError(
+                f"未配置 {api_key_env}，无法调用 {display_name} Provider。"
+            )
+        if not model:
+            raise AIReportProviderError(
+                "未配置 AI_MODEL，无法生成 AI 增长报告。"
+            )
+
+        self.name = name
+        self.display_name = display_name
+        self.model = model
+        self.base_url = base_url
+        self._client = client or _create_openai_client(
+            api_key=api_key,
+            base_url=base_url,
+        )
+
+    def generate(self, request: AIReportRequest) -> AIReportResponse:
+        try:
+            completion = self._client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": build_model_input(request)},
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=2500,
+                stream=False,
+            )
+        except Exception as exc:
+            raise AIReportProviderError(
+                f"{self.display_name} API 调用失败，请检查服务配置或稍后重试。"
+            ) from exc
+
+        try:
+            content = completion.choices[0].message.content
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise AIReportProviderError(
+                f"{self.display_name} API 返回了无法识别的响应结构。"
+            ) from exc
+
+        if not content or not content.strip():
+            raise AIReportProviderError(
+                f"{self.display_name} API 返回了空报告，请稍后重试。"
+            )
+
+        try:
+            payload = json.loads(content)
+            return AIReportResponse.model_validate(payload)
+        except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+            raise AIReportProviderError(
+                f"{self.display_name} 返回内容不符合 AI 报告 JSON 结构。"
+            ) from exc
+
+
+class DeepSeekAIReportProvider(OpenAICompatibleAIReportProvider):
+    name = "deepseek"
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None,
+        model: str,
+        client: Any | None = None,
+    ) -> None:
+        super().__init__(
+            name=self.name,
+            display_name="DeepSeek",
+            api_key=api_key,
+            api_key_env="DEEPSEEK_API_KEY",
+            model=model,
+            base_url="https://api.deepseek.com",
+            client=client,
+        )
+
+
+class OpenAIReportProvider(OpenAICompatibleAIReportProvider):
+    name = "openai"
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None,
+        model: str,
+        client: Any | None = None,
+    ) -> None:
+        super().__init__(
+            name=self.name,
+            display_name="OpenAI",
+            api_key=api_key,
+            api_key_env="OPENAI_API_KEY",
+            model=model,
+            client=client,
+        )
+
+
+def _create_openai_client(
+    *,
+    api_key: str,
+    base_url: str | None,
+) -> Any:
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise AIReportProviderError(
+            "缺少 openai SDK，请先安装 backend/requirements.txt。"
+        ) from exc
+
+    client_options: dict[str, Any] = {
+        "api_key": api_key,
+        "max_retries": 1,
+        "timeout": 30.0,
+    }
+    if base_url:
+        client_options["base_url"] = base_url
+    return OpenAI(**client_options)
 
 
 class MockAIReportProvider:

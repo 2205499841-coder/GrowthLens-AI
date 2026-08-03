@@ -14,6 +14,9 @@ backend/.ruff_cache/
 backend/**/__pycache__/
 backend/**/*.py[cod]
 backend/.coverage
+backend/.env
+backend/.env.*
+!backend/.env.example
 
 # Local environment
 .env
