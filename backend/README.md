@@ -76,3 +76,15 @@ Provider 时，设置 `AI_PROVIDER=openai`、`OPENAI_API_KEY`，并将
 ```bash
 pytest
 ```
+
+## Render 部署
+
+仓库根目录已提供 `render.yaml`。Render 使用以下启动命令：
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+健康检查路径为 `/api/health`。`DEEPSEEK_API_KEY` 和实际
+`BACKEND_CORS_ORIGINS` 只在 Render Dashboard 填写，完整流程见
+[Render 后端部署](../docs/render-deployment.md)。

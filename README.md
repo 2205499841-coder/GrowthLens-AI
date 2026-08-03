@@ -47,3 +47,8 @@ growthlens-ai/
 
 写真行业演示数据位于 `sample_data/portrait_growth_demo.xlsx`，可通过
 `sample_data/generate_sample_data.py` 使用固定随机种子重新生成。
+
+## 部署
+
+FastAPI 后端使用仓库根目录的 `render.yaml` 部署到 Render。生产密钥只在
+Render Dashboard 配置，详细步骤见 [Render 后端部署](docs/render-deployment.md)。
