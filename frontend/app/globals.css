@@ -761,7 +761,7 @@ tbody tr:hover {
   margin: 0;
 }
 
-.mock-badge {
+.provider-badge {
   background: #f1ecff;
   border: 1px solid #dfd4ff;
   border-radius: 999px;

@@ -31,7 +31,8 @@ AI 报告由用户在 Dashboard 主动触发，调用：
 POST http://localhost:8000/api/ai/report
 ```
 
-当前页面会明确标记 `Mock LLM`，方便作品集演示且不会产生外部 API 调用。
+页面通过后端 Provider 生成报告，默认 Provider 为 DeepSeek；前端不持有
+API Key，也不直接调用模型服务。
 
 ## 检查
 

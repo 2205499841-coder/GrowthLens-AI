@@ -11,7 +11,7 @@ AI user growth analysis assistant for lifestyle service businesses.
 3. 指标计算
 4. 漏斗分析
 5. Dashboard 展示
-6. AI 增长报告（Mock LLM）
+6. AI 增长报告（DeepSeek Provider）
 
 当前不包含 AI 问答、Agent、RAG、登录、数据库、用户系统和多项目管理。
 
@@ -42,7 +42,7 @@ growthlens-ai/
 - Step 3：Excel 上传与解析；
 - Step 4：数据清洗、增长指标、漏斗及渠道分析；
 - Step 5：单页增长 Dashboard；
-- Step 6：结构化 AI 增长报告（当前使用 Mock Provider）；
+- Step 6：结构化 AI 增长报告（默认使用 DeepSeek Provider）；
 - AI 问答尚未实现。
 
 写真行业演示数据位于 `sample_data/portrait_growth_demo.xlsx`，可通过
