@@ -1,9 +1,9 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from app.core.config import settings
+from app.schemas.ingestion import ExcelIngestionErrorResponse
 from app.schemas.upload import ExcelParseResponse
 from app.services.excel_parser import (
-    ExcelParseError,
     build_parse_response,
     parse_excel,
     validate_file_name,
@@ -12,7 +12,11 @@ from app.services.excel_parser import (
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
 
-@router.post("/parse", response_model=ExcelParseResponse)
+@router.post(
+    "/parse",
+    response_model=ExcelParseResponse,
+    responses={422: {"model": ExcelIngestionErrorResponse}},
+)
 async def parse_uploaded_excel(file: UploadFile = File(...)) -> ExcelParseResponse:
     try:
         file_name = validate_file_name(file.filename)
@@ -31,10 +35,5 @@ async def parse_uploaded_excel(file: UploadFile = File(...)) -> ExcelParseRespon
             preview_limit=settings.preview_row_limit,
         )
         return ExcelParseResponse.model_validate(response_data)
-    except ExcelParseError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
     finally:
         await file.close()

@@ -5,6 +5,32 @@ import type { ExcelParseResult } from "@/types/upload";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
+interface ApiErrorResponse {
+  detail?: unknown;
+  error?: string;
+  message?: string;
+  missing_fields?: string[];
+}
+
+async function buildApiError(
+  response: Response,
+  fallbackMessage: string,
+): Promise<Error> {
+  const errorBody = (await response.json().catch(() => null)) as
+    | ApiErrorResponse
+    | null;
+  const detailMessage =
+    typeof errorBody?.detail === "string" ? errorBody.detail : null;
+  const baseMessage =
+    errorBody?.message ?? detailMessage ?? errorBody?.error ?? fallbackMessage;
+  const missingFields = errorBody?.missing_fields ?? [];
+  const fieldMessage = missingFields.length
+    ? ` 缺少字段：${missingFields.join("、")}。`
+    : "";
+
+  return new Error(`${baseMessage}${fieldMessage}`);
+}
+
 export async function parseExcel(file: File): Promise<ExcelParseResult> {
   const body = new FormData();
   body.append("file", file);
@@ -15,10 +41,7 @@ export async function parseExcel(file: File): Promise<ExcelParseResult> {
   });
 
   if (!response.ok) {
-    const errorBody = (await response.json().catch(() => null)) as
-      | { detail?: string }
-      | null;
-    throw new Error(errorBody?.detail ?? "Excel 解析失败，请稍后重试。");
+    throw await buildApiError(response, "Excel 解析失败，请稍后重试。");
   }
 
   return (await response.json()) as ExcelParseResult;
@@ -36,10 +59,7 @@ export async function analyzeGrowth(
   });
 
   if (!response.ok) {
-    const errorBody = (await response.json().catch(() => null)) as
-      | { detail?: string }
-      | null;
-    throw new Error(errorBody?.detail ?? "增长分析失败，请稍后重试。");
+    throw await buildApiError(response, "增长分析失败，请稍后重试。");
   }
 
   return (await response.json()) as GrowthAnalysisResult;
@@ -62,10 +82,7 @@ export async function generateAIReport(
   });
 
   if (!response.ok) {
-    const errorBody = (await response.json().catch(() => null)) as
-      | { detail?: string }
-      | null;
-    throw new Error(errorBody?.detail ?? "AI 增长报告生成失败，请稍后重试。");
+    throw await buildApiError(response, "AI 增长报告生成失败，请稍后重试。");
   }
 
   return (await response.json()) as AIReport;

@@ -2,9 +2,9 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from app.core.config import settings
 from app.schemas.analysis import GrowthAnalysisResponse
+from app.schemas.ingestion import ExcelIngestionErrorResponse
 from app.services.data_cleaner import clean_growth_data
 from app.services.excel_parser import (
-    ExcelParseError,
     parse_excel,
     validate_file_name,
 )
@@ -14,7 +14,11 @@ from app.services.growth_metrics import build_growth_analysis
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 
-@router.post("/growth", response_model=GrowthAnalysisResponse)
+@router.post(
+    "/growth",
+    response_model=GrowthAnalysisResponse,
+    responses={422: {"model": ExcelIngestionErrorResponse}},
+)
 async def analyze_growth_excel(
     file: UploadFile = File(...),
 ) -> GrowthAnalysisResponse:
@@ -34,11 +38,7 @@ async def analyze_growth_excel(
             cleaning_result,
             file_name=file_name,
         )
+        analysis["data_ingestion"] = parsed_excel.data_ingestion_summary
         return GrowthAnalysisResponse.model_validate(analysis)
-    except ExcelParseError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
     finally:
         await file.close()

@@ -2,6 +2,8 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
+from app.schemas.ingestion import DataIngestionSummary
+
 
 class AnalysisMetadata(BaseModel):
     file_name: str
@@ -61,6 +63,7 @@ class FunnelAnalysis(BaseModel):
 
 class GrowthAnalysisResponse(BaseModel):
     metadata: AnalysisMetadata
+    data_ingestion: DataIngestionSummary
     data_quality: DataQualitySummary
     metrics: GrowthMetrics
     funnel: FunnelAnalysis

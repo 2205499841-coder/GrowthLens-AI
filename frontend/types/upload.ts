@@ -1,3 +1,5 @@
+import type { DataIngestionSummary } from "@/types/ingestion";
+
 export type CellValue = string | number | boolean | null;
 
 export interface ColumnProfile {
@@ -10,6 +12,7 @@ export interface ColumnProfile {
 export interface ExcelParseResult {
   file_name: string;
   sheet_name: string;
+  data_ingestion: DataIngestionSummary;
   row_count: number;
   column_count: number;
   columns: ColumnProfile[];

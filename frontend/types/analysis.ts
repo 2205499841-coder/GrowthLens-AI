@@ -1,3 +1,5 @@
+import type { DataIngestionSummary } from "@/types/ingestion";
+
 export interface AnalysisMetadata {
   file_name: string;
   data_start_date: string | null;
@@ -52,6 +54,7 @@ export interface FunnelStage {
 
 export interface GrowthAnalysisResult {
   metadata: AnalysisMetadata;
+  data_ingestion: DataIngestionSummary;
   data_quality: DataQualitySummary;
   metrics: GrowthMetrics;
   funnel: {

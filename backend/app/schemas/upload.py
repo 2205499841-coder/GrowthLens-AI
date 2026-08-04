@@ -3,6 +3,8 @@ from typing import TypeAlias
 
 from pydantic import BaseModel, Field
 
+from app.schemas.ingestion import DataIngestionSummary
+
 
 CellValue: TypeAlias = str | int | float | bool | datetime | None
 
@@ -17,6 +19,7 @@ class ColumnProfile(BaseModel):
 class ExcelParseResponse(BaseModel):
     file_name: str
     sheet_name: str
+    data_ingestion: DataIngestionSummary
     row_count: int = Field(ge=0)
     column_count: int = Field(ge=0)
     columns: list[ColumnProfile]
