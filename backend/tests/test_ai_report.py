@@ -140,6 +140,40 @@ def test_deepseek_provider_requires_api_key() -> None:
         )
 
 
+def test_deepseek_provider_logs_api_exception_details(caplog) -> None:
+    class FakeResponse:
+        status_code = 401
+        text = '{"error":"invalid model"}'
+
+    class FakeDeepSeekError(RuntimeError):
+        status_code = 401
+        response = FakeResponse()
+
+    def raise_deepseek_error(**_kwargs):
+        raise FakeDeepSeekError("Unauthorized")
+
+    failing_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=raise_deepseek_error),
+        )
+    )
+    provider = DeepSeekAIReportProvider(
+        api_key="test-key",
+        model="deepseek-chat",
+        client=failing_client,
+    )
+
+    with caplog.at_level("ERROR", logger="app.services.ai_report"):
+        with pytest.raises(AIReportProviderError):
+            provider.generate(_sample_request())
+
+    assert "DeepSeek API 调用异常" in caplog.text
+    assert "Unauthorized" in caplog.text
+    assert "status_code=401" in caplog.text
+    assert '{"error":"invalid model"}' in caplog.text
+    assert any(record.exc_info is not None for record in caplog.records)
+
+
 @pytest.mark.parametrize("content", ["", "not-json", "{}"])
 def test_deepseek_provider_rejects_invalid_structured_output(
     content: str,

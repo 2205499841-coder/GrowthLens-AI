@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any, Protocol
 
 from pydantic import ValidationError
@@ -12,6 +13,9 @@ from app.schemas.ai_report import (
     KeyInsight,
 )
 from app.schemas.analysis import FunnelStage, GrowthMetrics
+
+
+logger = logging.getLogger(__name__)
 
 
 REPORT_JSON_EXAMPLE = {
@@ -172,6 +176,12 @@ class OpenAICompatibleAIReportProvider:
                 stream=False,
             )
         except Exception as exc:
+            logger.exception(
+                "%s API 调用异常：%r",
+                self.display_name,
+                exc,
+            )
+            _log_provider_response_details(self.display_name, exc)
             raise AIReportProviderError(
                 f"{self.display_name} API 调用失败，请检查服务配置或稍后重试。"
             ) from exc
@@ -215,6 +225,39 @@ class DeepSeekAIReportProvider(OpenAICompatibleAIReportProvider):
             model=model,
             base_url="https://api.deepseek.com",
             client=client,
+        )
+
+
+def _log_provider_response_details(
+    provider_name: str,
+    exc: Exception,
+) -> None:
+    response = getattr(exc, "response", None)
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None and response is not None:
+        status_code = getattr(response, "status_code", None)
+
+    response_body = None
+    if response is not None:
+        try:
+            response_body = getattr(response, "text", None)
+        except Exception:
+            logger.exception("%s API 响应体读取失败", provider_name)
+
+    if response_body is None:
+        response_body = getattr(exc, "body", None)
+
+    if status_code is not None:
+        logger.error(
+            "%s API response status_code=%s",
+            provider_name,
+            status_code,
+        )
+    if response_body is not None:
+        logger.error(
+            "%s API response body=%r",
+            provider_name,
+            response_body,
         )
 
 
