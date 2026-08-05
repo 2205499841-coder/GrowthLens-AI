@@ -65,6 +65,51 @@ def test_calculate_metrics_funnel_and_channels() -> None:
     )
 
 
+def test_build_available_funnel_when_optional_time_fields_are_missing() -> None:
+    base_time = datetime(2026, 6, 1, 10, 0)
+    data_frame = pd.DataFrame(
+        [
+            {
+                "user_id": "U001",
+                "channel": "小红书",
+                "register_time": base_time,
+                "appointment_time": base_time + timedelta(days=1),
+                "order_amount": 1299,
+            },
+            {
+                "user_id": "U002",
+                "channel": "微信",
+                "register_time": base_time,
+                "appointment_time": None,
+                "order_amount": None,
+            },
+        ]
+    )
+
+    analysis = build_growth_analysis(
+        clean_growth_data(data_frame),
+        file_name="partial_funnel.xlsx",
+    )
+
+    assert analysis["metrics"]["user_counts"] == {
+        "registered_users": 2,
+        "viewed_users": 0,
+        "lead_users": 0,
+        "appointment_users": 1,
+        "visit_users": 0,
+        "paid_users": 1,
+    }
+    assert analysis["metrics"]["conversion_rates"]["appointment_rate"] == 0.5
+    assert analysis["metrics"]["conversion_rates"]["paid_rate"] == 1.0
+    assert analysis["metrics"]["revenue"] == {
+        "gmv": 1299.0,
+        "average_order_value": 1299.0,
+    }
+    assert [
+        stage["key"] for stage in analysis["funnel"]["stages"]
+    ] == ["registered_users", "appointment_users", "paid_users"]
+
+
 def _row(
     *,
     user_id: str,

@@ -76,6 +76,11 @@ async def analyze_growth_excel(
         schema_mapping = {
             "mapping": parsed_excel.field_mapping,
             "source": mapping_source,
+            "missing_fields": [
+                field
+                for field in REQUIRED_COLUMNS
+                if field not in parsed_excel.field_mapping
+            ],
         }
         analysis_context = classify_analysis_context(
             schema_mapping,

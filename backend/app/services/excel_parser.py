@@ -20,6 +20,21 @@ REQUIRED_COLUMNS = (
     "order_amount",
 )
 
+CORE_REQUIRED_COLUMNS = (
+    "user_id",
+    "channel",
+    "register_time",
+    "order_amount",
+)
+
+OPTIONAL_FUNNEL_COLUMNS = (
+    "view_time",
+    "lead_time",
+    "appointment_time",
+    "visit_time",
+    "pay_time",
+)
+
 FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "user_id": ("user_id", "用户ID", "用户编号", "用户标识"),
     "channel": (
@@ -87,12 +102,15 @@ class ParsedExcel:
 
     @property
     def data_ingestion_summary(self) -> dict[str, Any]:
+        missing_fields = [
+            field for field in REQUIRED_COLUMNS if field not in self.field_mapping
+        ]
         return {
             "used_sheet_name": self.sheet_name,
             "detected_sheet_names": list(self.detected_sheet_names),
             "recognized_field_count": len(self.field_mapping),
             "total_required_field_count": len(REQUIRED_COLUMNS),
-            "missing_fields": [],
+            "missing_fields": missing_fields,
             "row_count": int(len(self.data_frame)),
             "data_quality_status": "ready",
             "field_mapping": dict(self.field_mapping),
@@ -115,6 +133,18 @@ class _SheetCandidate:
         return [
             field for field in REQUIRED_COLUMNS if field not in self.field_mapping
         ]
+
+    @property
+    def missing_core_fields(self) -> list[str]:
+        return [
+            field
+            for field in CORE_REQUIRED_COLUMNS
+            if field not in self.field_mapping
+        ]
+
+    @property
+    def recognized_core_field_count(self) -> int:
+        return len(CORE_REQUIRED_COLUMNS) - len(self.missing_core_fields)
 
 
 def validate_file_name(file_name: str | None) -> str:
@@ -179,6 +209,7 @@ def parse_excel(file_content: bytes) -> ParsedExcel:
     best_candidate = max(
         candidates,
         key=lambda candidate: (
+            candidate.recognized_core_field_count,
             candidate.recognized_field_count,
             not candidate.data_frame.empty,
             len(candidate.data_frame),
@@ -186,11 +217,11 @@ def parse_excel(file_content: bytes) -> ParsedExcel:
         ),
     )
 
-    if best_candidate.missing_fields:
+    if best_candidate.missing_core_fields:
         raise ExcelParseError(
-            "未找到用户增长分析所需字段",
+            "未找到用户增长分析所需核心字段",
             error="Excel字段不完整",
-            missing_fields=best_candidate.missing_fields,
+            missing_fields=best_candidate.missing_core_fields,
             detected_sheet_names=list(detected_sheet_names),
             candidate_sheet_name=best_candidate.sheet_name,
             recognized_field_count=best_candidate.recognized_field_count,

@@ -66,6 +66,7 @@ class FunnelAnalysis(BaseModel):
 class AppliedSchemaMapping(BaseModel):
     mapping: dict[str, str]
     source: Literal["fixed", "ai"]
+    missing_fields: list[str] = Field(default_factory=list)
 
 
 class GrowthAnalysisResponse(BaseModel):

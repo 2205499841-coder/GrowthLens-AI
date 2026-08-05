@@ -5,7 +5,11 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 from app.main import app
-from app.services.excel_parser import REQUIRED_COLUMNS
+from app.services.excel_parser import (
+    CORE_REQUIRED_COLUMNS,
+    OPTIONAL_FUNNEL_COLUMNS,
+    REQUIRED_COLUMNS,
+)
 
 
 client = TestClient(app)
@@ -123,12 +127,37 @@ def test_return_structured_error_for_missing_fields() -> None:
     assert response.status_code == 422
     assert response.json() == {
         "error": "Excel字段不完整",
-        "message": "未找到用户增长分析所需字段",
-        "missing_fields": ["pay_time", "order_amount"],
+        "message": "未找到用户增长分析所需核心字段",
+        "missing_fields": ["order_amount"],
         "detected_sheet_names": ["用户增长数据"],
         "candidate_sheet_name": "用户增长数据",
         "recognized_field_count": 7,
         "data_quality_status": "invalid",
+    }
+
+
+def test_parse_accepts_core_fields_without_optional_funnel_fields() -> None:
+    response = client.post(
+        "/api/uploads/parse",
+        files={
+            "file": (
+                "core_fields.xlsx",
+                create_workbook_bytes(columns=CORE_REQUIRED_COLUMNS),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_ingestion"]["recognized_field_count"] == len(
+        CORE_REQUIRED_COLUMNS
+    )
+    assert payload["data_ingestion"]["missing_fields"] == list(
+        OPTIONAL_FUNNEL_COLUMNS
+    )
+    assert payload["data_ingestion"]["field_mapping"] == {
+        field: field for field in CORE_REQUIRED_COLUMNS
     }
 
 

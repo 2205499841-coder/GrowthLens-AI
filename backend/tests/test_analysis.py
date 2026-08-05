@@ -10,7 +10,11 @@ import app.api.analysis as analysis_api
 from app.main import app
 from app.schemas.schema_mapping import SchemaMappingResponse
 from app.services.analysis_classifier import DEFAULT_ANALYSIS_CONTEXT
-from app.services.excel_parser import REQUIRED_COLUMNS
+from app.services.excel_parser import (
+    CORE_REQUIRED_COLUMNS,
+    OPTIONAL_FUNNEL_COLUMNS,
+    REQUIRED_COLUMNS,
+)
 
 
 client = TestClient(app)
@@ -75,6 +79,7 @@ def test_analyze_growth_excel_returns_unified_structure(monkeypatch) -> None:
     assert payload["schema_mapping"] == {
         "mapping": {field: field for field in REQUIRED_COLUMNS},
         "source": "fixed",
+        "missing_fields": [],
     }
     assert payload["analysis_context"] == (
         DEFAULT_ANALYSIS_CONTEXT.model_dump(mode="json")
@@ -155,6 +160,7 @@ def test_nonstandard_excel_uses_ai_mapping(monkeypatch) -> None:
     assert payload["schema_mapping"] == {
         "mapping": mapping,
         "source": "ai",
+        "missing_fields": [],
     }
     assert payload["data_ingestion"]["field_mapping"] == mapping
     assert payload["metrics"]["user_counts"]["registered_users"] == 3
@@ -238,13 +244,137 @@ def test_ai_unrecognized_fields_returns_structured_error(monkeypatch) -> None:
     assert response.status_code == 422
     assert response.json() == {
         "error": "AI字段映射不完整",
-        "message": "AI 未能识别全部用户增长分析字段。",
-        "missing_fields": list(REQUIRED_COLUMNS),
+        "message": "AI 未能识别全部用户增长分析核心字段。",
+        "missing_fields": list(CORE_REQUIRED_COLUMNS),
         "detected_sheet_names": ["用户明细"],
         "candidate_sheet_name": "用户明细",
         "recognized_field_count": 0,
         "data_quality_status": "invalid",
     }
+
+
+def test_core_only_fixed_template_generates_available_funnel(
+    monkeypatch,
+) -> None:
+    def fail_if_ai_mapping_is_called(_columns):
+        raise AssertionError("核心字段完整时不应调用 AI 字段识别")
+
+    monkeypatch.setattr(
+        analysis_api,
+        "map_columns",
+        fail_if_ai_mapping_is_called,
+    )
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "核心数据"
+    worksheet.append(list(CORE_REQUIRED_COLUMNS))
+    base_time = datetime(2026, 6, 1, 10, 0)
+    worksheet.append(["U001", "小红书", base_time, 1599])
+    worksheet.append(["U002", "微信", base_time, None])
+    worksheet.append(["U003", "自然流量", base_time, 0])
+    file_buffer = BytesIO()
+    workbook.save(file_buffer)
+
+    response = client.post(
+        "/api/analysis/growth",
+        files={
+            "file": (
+                "core_only.xlsx",
+                file_buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema_mapping"] == {
+        "mapping": {field: field for field in CORE_REQUIRED_COLUMNS},
+        "source": "fixed",
+        "missing_fields": list(OPTIONAL_FUNNEL_COLUMNS),
+    }
+    assert payload["data_ingestion"]["missing_fields"] == list(
+        OPTIONAL_FUNNEL_COLUMNS
+    )
+    assert payload["metrics"]["user_counts"]["paid_users"] == 1
+    assert payload["metrics"]["conversion_rates"]["paid_rate"] == 0.3333
+    assert payload["metrics"]["revenue"]["gmv"] == 1599
+    assert [
+        stage["key"] for stage in payload["funnel"]["stages"]
+    ] == ["registered_users", "paid_users"]
+
+
+def test_partial_ai_mapping_keeps_optional_funnel_fields_optional(
+    monkeypatch,
+) -> None:
+    columns = (
+        "客户编号",
+        "获客来源",
+        "开户日期",
+        "实际到店",
+        "实收金额",
+    )
+    mapping = {
+        "user_id": "客户编号",
+        "channel": "获客来源",
+        "register_time": "开户日期",
+        "visit_time": "实际到店",
+        "order_amount": "实收金额",
+    }
+    mapping_response = {field: None for field in REQUIRED_COLUMNS}
+    mapping_response.update(mapping)
+    confidence = {field: None for field in REQUIRED_COLUMNS}
+    confidence.update({field: "high" for field in mapping})
+    monkeypatch.setattr(
+        analysis_api,
+        "map_columns",
+        lambda _columns: SchemaMappingResponse(
+            mapping=mapping_response,
+            confidence=confidence,
+            unmapped_columns=[],
+        ),
+    )
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "自定义用户明细"
+    worksheet.append(list(columns))
+    base_time = datetime(2026, 6, 1, 10, 0)
+    worksheet.append(
+        ["U001", "小红书", base_time, base_time + timedelta(days=1), 1999]
+    )
+    worksheet.append(["U002", "微信", base_time, None, None])
+    file_buffer = BytesIO()
+    workbook.save(file_buffer)
+
+    response = client.post(
+        "/api/analysis/growth",
+        files={
+            "file": (
+                "partial_ai_mapping.xlsx",
+                file_buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema_mapping"] == {
+        "mapping": mapping,
+        "source": "ai",
+        "missing_fields": [
+            "view_time",
+            "lead_time",
+            "appointment_time",
+            "pay_time",
+        ],
+    }
+    assert payload["metrics"]["user_counts"]["paid_users"] == 1
+    assert payload["metrics"]["revenue"]["gmv"] == 1999
+    assert [
+        stage["key"] for stage in payload["funnel"]["stages"]
+    ] == ["registered_users", "visit_users", "paid_users"]
 
 
 def _create_analysis_workbook(

@@ -4,7 +4,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.services.excel_parser import REQUIRED_COLUMNS
+from app.services.excel_parser import CORE_REQUIRED_COLUMNS, REQUIRED_COLUMNS
 
 
 TIME_COLUMNS = (
@@ -23,11 +23,25 @@ UNKNOWN_CHANNEL = "未知"
 class CleaningResult:
     data_frame: pd.DataFrame
     data_quality_summary: dict[str, Any]
+    available_fields: frozenset[str]
 
 
 def clean_growth_data(data_frame: pd.DataFrame) -> CleaningResult:
     """Normalize uploaded user-level data and return inspectable quality evidence."""
-    working = data_frame.loc[:, list(REQUIRED_COLUMNS)].copy()
+    missing_core_fields = [
+        field for field in CORE_REQUIRED_COLUMNS if field not in data_frame.columns
+    ]
+    if missing_core_fields:
+        names = "、".join(missing_core_fields)
+        raise ValueError(f"缺少用户增长分析核心字段：{names}")
+
+    available_fields = frozenset(
+        field for field in REQUIRED_COLUMNS if field in data_frame.columns
+    )
+    active_columns = [
+        field for field in REQUIRED_COLUMNS if field in available_fields
+    ]
+    working = data_frame.reindex(columns=list(REQUIRED_COLUMNS)).copy()
     working["_source_row"] = range(len(working))
     original_user_count = len(working)
 
@@ -50,7 +64,7 @@ def clean_growth_data(data_frame: pd.DataFrame) -> CleaningResult:
     issue_rows.update(working.loc[missing_user_mask, "_source_row"].astype(int))
     working = working.loc[~missing_user_mask].copy()
 
-    working["_completeness_score"] = working.loc[:, list(REQUIRED_COLUMNS)].apply(
+    working["_completeness_score"] = working.loc[:, active_columns].apply(
         lambda row: sum(_has_value(value) for value in row),
         axis=1,
     )
@@ -79,7 +93,10 @@ def clean_growth_data(data_frame: pd.DataFrame) -> CleaningResult:
     working["channel"] = original_channel.map(_normalize_channel)
 
     future_cutoff = pd.Timestamp(datetime.now() + timedelta(days=1))
-    for column in TIME_COLUMNS:
+    available_time_columns = tuple(
+        column for column in TIME_COLUMNS if column in available_fields
+    )
+    for column in available_time_columns:
         raw_values = working[column]
         present_mask = raw_values.map(_has_value)
         parsed_values = pd.to_datetime(
@@ -109,7 +126,7 @@ def clean_growth_data(data_frame: pd.DataFrame) -> CleaningResult:
         previous_time: pd.Timestamp | None = None
         path_is_complete = True
 
-        for column in TIME_COLUMNS:
+        for column in available_time_columns:
             current_time = row[column]
             if pd.isna(current_time):
                 path_is_complete = False
@@ -144,9 +161,16 @@ def clean_growth_data(data_frame: pd.DataFrame) -> CleaningResult:
     )
 
     numeric_amount = numeric_amount.fillna(0).clip(lower=0)
-    amount_without_payment_mask = (
-        numeric_amount.gt(0) & working["pay_time"].isna()
-    )
+    if "pay_time" in available_fields:
+        amount_without_payment_mask = (
+            numeric_amount.gt(0) & working["pay_time"].isna()
+        )
+    else:
+        amount_without_payment_mask = pd.Series(
+            False,
+            index=working.index,
+            dtype=bool,
+        )
     issue_counts["amount_without_payment"] = int(
         amount_without_payment_mask.sum()
     )
@@ -161,7 +185,10 @@ def clean_growth_data(data_frame: pd.DataFrame) -> CleaningResult:
 
     valid_user_count = len(working)
     removed_count = original_user_count - valid_user_count
-    data_completeness = _calculate_data_completeness(working)
+    data_completeness = _calculate_data_completeness(
+        working,
+        available_fields,
+    )
 
     cleaned_frame = working.drop(columns="_source_row").reset_index(drop=True)
     return CleaningResult(
@@ -174,10 +201,14 @@ def clean_growth_data(data_frame: pd.DataFrame) -> CleaningResult:
             "data_completeness": data_completeness,
             "issue_counts": issue_counts,
         },
+        available_fields=available_fields,
     )
 
 
-def _calculate_data_completeness(data_frame: pd.DataFrame) -> float:
+def _calculate_data_completeness(
+    data_frame: pd.DataFrame,
+    available_fields: frozenset[str],
+) -> float:
     """Measure required-field coverage without penalizing normal funnel drop-off."""
     if data_frame.empty:
         return 0.0
@@ -189,7 +220,10 @@ def _calculate_data_completeness(data_frame: pd.DataFrame) -> float:
         + data_frame["register_time"].notna().sum()
     )
 
-    paid_mask = data_frame["pay_time"].notna()
+    if "pay_time" in available_fields:
+        paid_mask = data_frame["pay_time"].notna()
+    else:
+        paid_mask = data_frame["order_amount"].gt(0)
     required_slots += int(paid_mask.sum())
     complete_slots += int(
         (paid_mask & data_frame["order_amount"].gt(0)).sum()

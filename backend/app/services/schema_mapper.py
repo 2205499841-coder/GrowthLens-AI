@@ -11,7 +11,9 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.schemas.schema_mapping import SchemaMappingResponse
 from app.services.excel_parser import (
+    CORE_REQUIRED_COLUMNS,
     ExcelParseError,
+    OPTIONAL_FUNNEL_COLUMNS,
     ParsedExcel,
     REQUIRED_COLUMNS,
 )
@@ -39,6 +41,12 @@ SCHEMA_MAPPING_SYSTEM_PROMPT = (
 任务：把用户上传 Excel 的原始字段映射到以下增长分析标准字段：
 {json.dumps(STANDARD_FIELD_DESCRIPTIONS, ensure_ascii=False, indent=2)}
 
+核心必填字段：
+{json.dumps(CORE_REQUIRED_COLUMNS, ensure_ascii=False)}
+
+可选漏斗字段：
+{json.dumps(OPTIONAL_FUNNEL_COLUMNS, ensure_ascii=False)}
+
 只输出一个合法 JSON 对象，结构必须为：
 {{
   "mapping": {{"标准字段": "原始字段或null"}},
@@ -54,7 +62,8 @@ SCHEMA_MAPPING_SYSTEM_PROMPT = (
 4. 只有字段名称语义明确时才映射；无法判断时必须返回 null，
 不要强制匹配。
 5. 不根据行业常识补充输入中不存在的字段。
-6. 不输出 Markdown、代码块、解释或 JSON 之外的内容。
+6. 可选漏斗字段不存在时返回 null，不得为了凑齐字段而强制映射。
+7. 不输出 Markdown、代码块、解释或 JSON 之外的内容。
 """
 )
 
@@ -176,19 +185,22 @@ def build_ai_mapped_excel(
     mapping_result: SchemaMappingResponse,
 ) -> ParsedExcel:
     """Load the selected sheet and rename verified AI mappings."""
-    missing_fields = [
+    missing_core_fields = [
         field
-        for field in REQUIRED_COLUMNS
+        for field in CORE_REQUIRED_COLUMNS
         if mapping_result.mapping.get(field) is None
     ]
-    if missing_fields:
+    if missing_core_fields:
         raise ExcelParseError(
-            "AI 未能识别全部用户增长分析字段。",
+            "AI 未能识别全部用户增长分析核心字段。",
             error="AI字段映射不完整",
-            missing_fields=missing_fields,
+            missing_fields=missing_core_fields,
             detected_sheet_names=list(extracted_schema.detected_sheet_names),
             candidate_sheet_name=extracted_schema.sheet_name,
-            recognized_field_count=(len(REQUIRED_COLUMNS) - len(missing_fields)),
+            recognized_field_count=sum(
+                mapping_result.mapping.get(field) is not None
+                for field in REQUIRED_COLUMNS
+            ),
         )
 
     complete_mapping = {
