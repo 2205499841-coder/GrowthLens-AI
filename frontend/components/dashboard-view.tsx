@@ -36,17 +36,17 @@ export function DashboardView({ result }: DashboardViewProps) {
     {
       label: "原始用户数",
       value: formatInteger(quality.original_user_count),
-      note: "上传文件原始记录",
+      note: "数据源记录总量",
     },
     {
       label: "有效用户数",
       value: formatInteger(quality.valid_user_count),
-      note: "完成 ID 清洗去重",
+      note: "完成标准化与去重",
     },
     {
       label: "删除数量",
       value: formatInteger(quality.removed_count),
-      note: "空 ID 与重复记录",
+      note: "无效及重复记录",
     },
     {
       label: "数据完整度",
@@ -56,7 +56,7 @@ export function DashboardView({ result }: DashboardViewProps) {
     {
       label: "异常数据",
       value: formatInteger(quality.anomaly_count),
-      note: "至少命中一项规则",
+      note: "需要关注的质量问题",
       tone: quality.anomaly_count > 0 ? "warning" : "default",
     },
   ];
@@ -93,8 +93,8 @@ export function DashboardView({ result }: DashboardViewProps) {
     <div className="dashboard-content">
       <DashboardSection
         eyebrow="Data understanding"
-        title="AI数据理解"
-        description="展示上传字段如何对齐到 GrowthLens 标准分析口径。"
+        title="AI 数据理解"
+        description="自动识别业务场景与字段语义，建立统一、可信的增长分析口径。"
       >
         <div className="data-understanding-stack">
           <AnalysisContextPanel context={result.analysis_context} />
@@ -108,7 +108,7 @@ export function DashboardView({ result }: DashboardViewProps) {
       <DashboardSection
         eyebrow="Data quality"
         title="数据质量摘要"
-        description="上传数据经过标准化、去重和业务规则校验后的质量概况。"
+        description="识别缺失、重复与异常记录，评估当前数据的分析可信度。"
       >
         <SummaryGrid cards={qualityCards} variant="quality" />
       </DashboardSection>
@@ -116,7 +116,7 @@ export function DashboardView({ result }: DashboardViewProps) {
       <DashboardSection
         eyebrow="Performance overview"
         title="核心增长指标"
-        description="所有指标由后端统一计算，前端仅负责展示分析结果。"
+        description="聚合用户规模、转化效率与收入表现，掌握业务增长基本盘。"
       >
         <SummaryGrid cards={metricCards} variant="metrics" />
       </DashboardSection>
@@ -124,7 +124,7 @@ export function DashboardView({ result }: DashboardViewProps) {
       <DashboardSection
         eyebrow="User journey"
         title="用户增长漏斗"
-        description="转化率与流失均按相邻阶段计算，阶段人数保持单调递减。"
+        description="追踪关键业务阶段的转化与流失，快速定位增长瓶颈。"
       >
         <Funnel stages={result.funnel.stages} />
       </DashboardSection>
@@ -132,7 +132,7 @@ export function DashboardView({ result }: DashboardViewProps) {
       <DashboardSection
         eyebrow="Channel performance"
         title="渠道分析"
-        description="同时比较渠道规模、到店后的成交效率与收入贡献。"
+        description="对比渠道规模、转化效率与收入贡献，识别高潜增长机会。"
       >
         <div className="chart-grid">
           <ChannelBarChart

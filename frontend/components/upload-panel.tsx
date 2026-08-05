@@ -7,7 +7,7 @@ import type { GrowthAnalysisResult } from "@/types/analysis";
 
 const ACCEPTED_FILE_EXTENSION = ".xlsx";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const DEMO_FILE_PATH = "/sample_data/portrait_growth_demo.xlsx";
+const DATA_TEMPLATE_PATH = "/sample_data/portrait_growth_demo.xlsx";
 
 interface UploadPanelProps {
   compact?: boolean;
@@ -80,10 +80,10 @@ export function UploadPanel({
     >
       {!compact ? (
         <div className="upload-intro">
-          <p className="section-kicker">Excel 数据源</p>
-          <h2 id="upload-title">上传写真业务数据，生成增长 Dashboard</h2>
+          <p className="section-kicker">Business data</p>
+          <h2 id="upload-title">上传业务数据，开启智能增长分析</h2>
           <p>
-            系统将在单次请求内完成数据清洗、指标计算和漏斗分析，不保存业务原始文件。
+            GrowthLens AI 将自动识别数据结构，完成质量校验、指标计算、漏斗诊断与渠道对比。
           </p>
         </div>
       ) : null}
@@ -91,10 +91,10 @@ export function UploadPanel({
       <form className="upload-form" onSubmit={handleSubmit}>
         <label className="file-picker">
           <span className="file-picker-label">
-            {selectedFile?.name ?? currentFileName ?? "选择 .xlsx 文件"}
+            {selectedFile?.name ?? currentFileName ?? "选择业务数据文件"}
           </span>
           <span className="file-picker-action">
-            {compact ? "更换文件" : "浏览文件"}
+            {compact ? "更换数据" : "选择文件"}
           </span>
           <input
             accept={ACCEPTED_FILE_EXTENSION}
@@ -109,7 +109,7 @@ export function UploadPanel({
           disabled={!selectedFile || isUploading}
           type="submit"
         >
-          {isUploading ? "正在分析…" : compact ? "重新分析" : "生成 Dashboard"}
+          {isUploading ? "正在生成分析…" : compact ? "更新分析" : "开始增长分析"}
         </button>
       </form>
 
@@ -121,11 +121,11 @@ export function UploadPanel({
 
       {!compact ? (
         <p className="upload-hint">
-          演示文件：
-          <a download href={DEMO_FILE_PATH}>
-            下载 portrait_growth_demo.xlsx
+          数据模板：
+          <a download="growth_analysis_template.xlsx" href={DATA_TEMPLATE_PATH}>
+            下载标准 Excel 模板
           </a>
-          <span> · 最大 10 MB</span>
+          <span> · 支持 .xlsx · 最大 10 MB</span>
         </p>
       ) : null}
     </section>

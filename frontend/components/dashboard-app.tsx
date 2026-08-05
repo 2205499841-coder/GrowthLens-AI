@@ -18,12 +18,12 @@ export function DashboardApp() {
             <span className="brand-mark">GL</span>
             <div>
               <strong>GrowthLens AI</strong>
-              <span>写真行业增长分析助手</span>
+              <span>AI 业务增长分析平台</span>
             </div>
           </div>
           <div className="header-status">
             <span className="status-dot" />
-            本地分析模式
+            智能分析服务已就绪
           </div>
         </div>
 
@@ -31,10 +31,10 @@ export function DashboardApp() {
           <>
             <div className="analysis-heading">
               <div>
-                <p className="section-kicker">Growth dashboard</p>
-                <h1>用户增长分析总览</h1>
+                <p className="section-kicker">Growth intelligence dashboard</p>
+                <h1>业务增长分析全景</h1>
                 <p>
-                  从用户规模、转化漏斗到渠道效率，快速定位写真小程序的增长表现。
+                  整合数据质量、核心指标、转化漏斗与渠道表现，快速识别关键增长机会。
                 </p>
               </div>
               <UploadPanel
@@ -45,7 +45,7 @@ export function DashboardApp() {
             </div>
             <div className="dataset-strip">
               <DatasetItem
-                label="当前文件"
+                label="数据文件"
                 value={result.metadata.file_name}
               />
               <DatasetItem
@@ -59,21 +59,21 @@ export function DashboardApp() {
                 label="有效用户"
                 value={`${formatInteger(result.data_quality.valid_user_count)} 人`}
               />
-              <DatasetItem label="数据状态" value="分析完成" status />
+              <DatasetItem label="分析状态" value="洞察已就绪" status />
             </div>
           </>
         ) : (
           <div className="empty-state">
             <div className="empty-state-copy">
-              <p className="section-kicker">Growth intelligence workspace</p>
-              <h1>让增长数据更快变成运营判断</h1>
+              <p className="section-kicker">AI-powered growth intelligence</p>
+              <h1>让每一份业务数据，都转化为增长决策</h1>
               <p>
-                上传写真小程序业务 Excel，自动完成数据清洗、指标计算、漏斗分析与渠道对比。
+                上传业务 Excel，自动完成数据理解、质量诊断、指标计算、转化漏斗与渠道分析，快速获得可执行的增长洞察。
               </p>
               <div className="feature-chips">
-                <span>数据质量校验</span>
-                <span>六步增长漏斗</span>
-                <span>渠道效率对比</span>
+                <span>AI 数据理解</span>
+                <span>转化漏斗诊断</span>
+                <span>渠道增长策略</span>
               </div>
             </div>
             <UploadPanel onAnalyzed={setResult} />
@@ -84,8 +84,8 @@ export function DashboardApp() {
       {result ? <DashboardView result={result} /> : null}
 
       <footer className="app-footer">
-        <span>GrowthLens AI · Portfolio MVP</span>
-        <span>数据仅在本次请求中处理，不持久化保存</span>
+        <span>GrowthLens AI · AI 增长分析平台</span>
+        <span>安全处理业务数据，不持久化保存原始文件</span>
       </footer>
     </main>
   );

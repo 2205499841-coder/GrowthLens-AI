@@ -46,14 +46,14 @@ export function AIReportSection({
       <div className="section-heading ai-section-heading">
         <div>
           <div className="ai-kicker-row">
-            <p className="section-kicker">AI growth report</p>
-            <span className="provider-badge">AI Provider</span>
+            <p className="section-kicker">AI growth intelligence</p>
+            <span className="provider-badge">AI 智能诊断</span>
           </div>
-          <h2>AI 增长报告</h2>
+          <h2>AI 增长策略报告</h2>
         </div>
         <div className="ai-heading-actions">
           <p>
-            AI 只解释后端聚合指标，不读取 Excel 原始明细，也不重新计算数据。
+            基于业务指标、转化漏斗与渠道表现，生成增长诊断和可执行策略。
           </p>
           <button
             className="ai-generate-button"
@@ -62,10 +62,10 @@ export function AIReportSection({
             type="button"
           >
             {isLoading
-              ? "正在生成报告…"
+              ? "正在生成策略…"
               : report
-                ? "重新生成"
-                : "生成 AI 报告"}
+                ? "更新增长策略"
+                : "生成增长策略"}
           </button>
         </div>
       </div>
@@ -93,14 +93,16 @@ function AIReportPlaceholder({ isLoading }: { isLoading: boolean }) {
     >
       <div className="ai-placeholder-mark">AI</div>
       <div>
-        <h3>{isLoading ? "正在组织增长洞察" : "基于当前结果生成业务解释"}</h3>
+        <h3>
+          {isLoading ? "正在研判增长机会" : "生成面向决策的增长诊断"}
+        </h3>
         <p>
           {isLoading
             ? "正在结合分析类型、字段语义、漏斗与渠道表现组织业务诊断。"
             : "报告将包含整体诊断、关键问题、渠道策略和可执行增长建议。"}
         </p>
       </div>
-      <span>结构化 JSON 输出</span>
+      <span>业务诊断 · 行动建议</span>
     </div>
   );
 }
@@ -109,15 +111,15 @@ function AIReportContent({ report }: { report: AIReport }) {
   return (
     <div className="ai-report-panel">
       <div className="ai-summary">
-        <span>AI 一句话总结</span>
+        <span>增长诊断摘要</span>
         <p>{report.summary}</p>
       </div>
 
       <div className="ai-report-block">
         <ReportBlockHeading
           index="01"
-          title="关键业务诊断"
-          description="问题、证据与建议一一对应"
+          title="关键增长发现"
+          description="聚焦问题、数据证据与优化方向"
         />
         <div className="insight-grid">
           {report.key_findings.map((finding, index) => (
@@ -134,7 +136,7 @@ function AIReportContent({ report }: { report: AIReport }) {
                 <p>{finding.evidence}</p>
               </div>
               <div className="insight-detail interpretation">
-                <span>对应建议</span>
+                <span>优化建议</span>
                 <p>{finding.recommendation}</p>
               </div>
             </article>
@@ -166,8 +168,8 @@ function AIReportContent({ report }: { report: AIReport }) {
         <div className="ai-report-block">
           <ReportBlockHeading
             index="03"
-            title="增长行动建议"
-            description="建议方向，不替代业务实验验证"
+            title="优先行动计划"
+            description="明确目标指标与预期改善方向"
           />
           <ol className="action-list">
             {report.growth_actions.map((item, index) => (

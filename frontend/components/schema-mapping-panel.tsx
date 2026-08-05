@@ -25,10 +25,10 @@ export function SchemaMappingPanel({
   const source = schemaMapping?.source ?? "fixed";
   const mapping = schemaMapping?.mapping ?? fallbackMapping;
   const isAI = source === "ai";
-  const sourceTitle = isAI ? "AI智能字段识别" : "标准模板识别";
+  const sourceTitle = isAI ? "AI 语义字段映射" : "标准字段映射";
   const sourceDescription = isAI
-    ? "DeepSeek 已根据字段语义完成标准口径匹配"
-    : "系统已通过标准字段与预设别名完成匹配";
+    ? "已根据字段语义完成业务数据与增长指标口径对齐"
+    : "已根据标准字段与业务别名完成指标口径对齐";
 
   return (
     <article className={`schema-panel schema-panel-${source}`}>
@@ -39,7 +39,9 @@ export function SchemaMappingPanel({
         <div>
           <div className="schema-source-title-row">
             <h3>{sourceTitle}</h3>
-            <span className="schema-source-badge">source: {source}</span>
+            <span className="schema-source-badge">
+              {isAI ? "AI 智能识别" : "规则自动识别"}
+            </span>
           </div>
           <p>{sourceDescription}</p>
         </div>
@@ -55,7 +57,7 @@ export function SchemaMappingPanel({
             <span className="schema-mapping-arrow" aria-hidden="true">
               →
             </span>
-            <strong>{mapping[field.key] ?? "未识别"}</strong>
+            <strong>{mapping[field.key] ?? "暂未匹配"}</strong>
           </div>
         ))}
       </div>

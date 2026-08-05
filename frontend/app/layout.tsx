@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "GrowthLens AI",
-  description: "写真行业用户增长分析 Demo",
+  description: "AI 驱动的业务增长分析与决策平台",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

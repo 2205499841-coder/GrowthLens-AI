@@ -41,7 +41,7 @@ export function AnalysisContextPanel({
       <div className="analysis-context-primary">
         <div className="analysis-context-label-row">
           <span className="analysis-context-mark">AI</span>
-          <span>推荐分析场景</span>
+          <span>智能识别分析场景</span>
         </div>
         <strong>
           {ANALYSIS_TYPE_LABELS[resolvedContext.analysis_type]}
@@ -58,7 +58,7 @@ export function AnalysisContextPanel({
       </div>
 
       <div className="analysis-context-metrics">
-        <span>推荐关注指标</span>
+        <span>建议重点关注</span>
         <div>
           {resolvedContext.recommended_metrics.map((metric) => (
             <span key={metric}>{metric}</span>
