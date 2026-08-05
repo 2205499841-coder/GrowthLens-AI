@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { AIReportSection } from "@/components/ai-report-section";
 import { ChannelBarChart } from "@/components/channel-bar-chart";
+import { SchemaMappingPanel } from "@/components/schema-mapping-panel";
 import {
   formatCurrency,
   formatCurrencyPrecise,
@@ -89,6 +90,17 @@ export function DashboardView({ result }: DashboardViewProps) {
 
   return (
     <div className="dashboard-content">
+      <DashboardSection
+        eyebrow="Data understanding"
+        title="AI数据理解"
+        description="展示上传字段如何对齐到 GrowthLens 标准分析口径。"
+      >
+        <SchemaMappingPanel
+          fallbackMapping={result.data_ingestion.field_mapping}
+          schemaMapping={result.schema_mapping}
+        />
+      </DashboardSection>
+
       <DashboardSection
         eyebrow="Data quality"
         title="数据质量摘要"

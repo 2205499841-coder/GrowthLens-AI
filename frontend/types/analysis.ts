@@ -52,9 +52,15 @@ export interface FunnelStage {
   dropoff_rate: number;
 }
 
+export interface SchemaMappingSummary {
+  mapping: Record<string, string>;
+  source: "fixed" | "ai";
+}
+
 export interface GrowthAnalysisResult {
   metadata: AnalysisMetadata;
   data_ingestion: DataIngestionSummary;
+  schema_mapping?: SchemaMappingSummary;
   data_quality: DataQualitySummary;
   metrics: GrowthMetrics;
   funnel: {

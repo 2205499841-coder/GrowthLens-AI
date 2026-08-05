@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -61,9 +62,15 @@ class FunnelAnalysis(BaseModel):
     stages: list[FunnelStage]
 
 
+class AppliedSchemaMapping(BaseModel):
+    mapping: dict[str, str]
+    source: Literal["fixed", "ai"]
+
+
 class GrowthAnalysisResponse(BaseModel):
     metadata: AnalysisMetadata
     data_ingestion: DataIngestionSummary
+    schema_mapping: AppliedSchemaMapping
     data_quality: DataQualitySummary
     metrics: GrowthMetrics
     funnel: FunnelAnalysis
