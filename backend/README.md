@@ -44,7 +44,8 @@ curl -X POST \
   http://localhost:8000/api/analysis/growth
 ```
 
-响应统一包含 `data_quality`、`metrics`、`funnel` 和 `channels`。
+响应统一包含 `schema_mapping`、`analysis_context`、`data_quality`、
+`metrics`、`funnel` 和 `channels`。
 详细口径见 [增长分析口径](../docs/growth-analysis.md)。
 
 AI 增长报告：
@@ -56,8 +57,9 @@ curl -X POST \
   http://localhost:8000/api/ai/report
 ```
 
-报告接口只接收增长分析结果中的 `data_quality`、`metrics`、`funnel`
-和 `channels`。默认通过 OpenAI SDK 兼容方式调用 DeepSeek：
+报告接口只接收增长分析结果中的 `analysis_context`、`schema_mapping`、
+`data_quality`、`metrics`、`funnel` 和 `channels`。默认通过 OpenAI SDK
+兼容方式调用 DeepSeek：
 
 ```bash
 AI_PROVIDER=deepseek \

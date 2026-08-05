@@ -31,8 +31,9 @@ AI 报告由用户在 Dashboard 主动触发，调用：
 POST http://localhost:8000/api/ai/report
 ```
 
-页面通过后端 Provider 生成报告，默认 Provider 为 DeepSeek；前端不持有
-API Key，也不直接调用模型服务。
+页面将 `analysis_context`、`schema_mapping` 与聚合指标交给后端 Provider
+生成业务诊断，默认 Provider 为 DeepSeek；前端不持有 API Key，也不直接
+调用模型服务。
 
 ## 检查
 

@@ -4,21 +4,11 @@ import { useState } from "react";
 
 import { generateAIReport } from "@/lib/api";
 import type { GrowthAnalysisResult } from "@/types/analysis";
-import type {
-  AIReport,
-  Confidence,
-  ExpectedDirection,
-} from "@/types/ai-report";
+import type { AIReport, ExpectedDirection } from "@/types/ai-report";
 
 interface AIReportSectionProps {
   analysis: GrowthAnalysisResult;
 }
-
-const CONFIDENCE_LABELS: Record<Confidence, string> = {
-  high: "高置信度",
-  medium: "中置信度",
-  low: "低置信度",
-};
 
 const DIRECTION_LABELS: Record<ExpectedDirection, string> = {
   increase: "预期提升",
@@ -106,8 +96,8 @@ function AIReportPlaceholder({ isLoading }: { isLoading: boolean }) {
         <h3>{isLoading ? "正在组织增长洞察" : "基于当前结果生成业务解释"}</h3>
         <p>
           {isLoading
-            ? "正在校验数据依据、渠道名称与洞察置信度。"
-            : "报告将包含整体总结、核心洞察、渠道机会和可执行增长建议。"}
+            ? "正在结合分析类型、字段语义、漏斗与渠道表现组织业务诊断。"
+            : "报告将包含整体诊断、关键问题、渠道策略和可执行增长建议。"}
         </p>
       </div>
       <span>结构化 JSON 输出</span>
@@ -126,28 +116,26 @@ function AIReportContent({ report }: { report: AIReport }) {
       <div className="ai-report-block">
         <ReportBlockHeading
           index="01"
-          title="核心洞察"
-          description="数据依据与原因假设分开呈现"
+          title="关键业务诊断"
+          description="问题、证据与建议一一对应"
         />
         <div className="insight-grid">
-          {report.key_insights.map((insight) => (
-            <article className="insight-card" key={insight.title}>
+          {report.key_findings.map((finding, index) => (
+            <article className="insight-card" key={`${finding.issue}-${index}`}>
               <div className="insight-card-header">
-                <span
-                  className={`confidence-badge confidence-${insight.confidence}`}
-                >
-                  {CONFIDENCE_LABELS[insight.confidence]}
+                <span className="finding-badge">
+                  诊断 {String(index + 1).padStart(2, "0")}
                 </span>
                 <span className="insight-icon">↗</span>
               </div>
-              <h4>{insight.title}</h4>
+              <h4>{finding.issue}</h4>
               <div className="insight-detail">
                 <span>数据依据</span>
-                <p>{insight.evidence}</p>
+                <p>{finding.evidence}</p>
               </div>
               <div className="insight-detail interpretation">
-                <span>原因假设</span>
-                <p>{insight.interpretation}</p>
+                <span>对应建议</span>
+                <p>{finding.recommendation}</p>
               </div>
             </article>
           ))}
@@ -158,22 +146,18 @@ function AIReportContent({ report }: { report: AIReport }) {
         <div className="ai-report-block">
           <ReportBlockHeading
             index="02"
-            title="渠道机会"
-            description="仅引用当前分析中的真实渠道"
+            title="渠道策略"
+            description="根据规模、转化和收入表现差异化诊断"
           />
           <div className="opportunity-list">
-            {report.channel_opportunities.map((item) => (
+            {report.channel_strategy.map((item) => (
               <article className="opportunity-item" key={item.channel}>
                 <div className="opportunity-channel">
                   <span className="channel-dot" />
                   <strong>{item.channel}</strong>
-                  <span
-                    className={`confidence-dot confidence-dot-${item.confidence}`}
-                    title={CONFIDENCE_LABELS[item.confidence]}
-                  />
                 </div>
-                <p>{item.opportunity}</p>
-                <small>{item.evidence}</small>
+                <p>{item.strategy}</p>
+                <small>{item.diagnosis}</small>
               </article>
             ))}
           </div>
@@ -204,14 +188,6 @@ function AIReportContent({ report }: { report: AIReport }) {
         </div>
       </div>
 
-      <div className="ai-limitations">
-        <strong>数据限制</strong>
-        <ul>
-          {report.limitations.map((limitation) => (
-            <li key={limitation}>{limitation}</li>
-          ))}
-        </ul>
-      </div>
     </div>
   );
 }

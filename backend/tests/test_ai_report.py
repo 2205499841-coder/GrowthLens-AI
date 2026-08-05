@@ -17,6 +17,7 @@ from app.services.ai_report import (
     generate_ai_report,
 )
 from app.services.data_cleaner import clean_growth_data
+from app.services.excel_parser import REQUIRED_COLUMNS
 from app.services.growth_metrics import build_growth_analysis
 
 
@@ -44,20 +45,15 @@ def test_ai_report_endpoint_returns_structured_report(monkeypatch) -> None:
     report = response.json()
     assert set(report) == {
         "summary",
-        "key_insights",
-        "channel_opportunities",
+        "key_findings",
+        "channel_strategy",
         "growth_actions",
-        "limitations",
     }
-    assert 2 <= len(report["key_insights"]) <= 3
+    assert 2 <= len(report["key_findings"]) <= 3
     assert 2 <= len(report["growth_actions"]) <= 3
     assert {
-        insight["confidence"]
-        for insight in report["key_insights"]
-    } <= {"high", "medium", "low"}
-    assert {
         item["channel"]
-        for item in report["channel_opportunities"]
+        for item in report["channel_strategy"]
     } <= set(request.channels)
     assert {
         action["expected_direction"]
@@ -118,6 +114,8 @@ def test_deepseek_provider_uses_openai_compatible_json_call() -> None:
     }
     assert call["messages"][0]["role"] == "system"
     assert "JSON" in call["messages"][0]["content"]
+    assert '"analysis_context"' in call["messages"][1]["content"]
+    assert '"schema_mapping"' in call["messages"][1]["content"]
     assert '"data_quality"' in call["messages"][1]["content"]
 
 
@@ -201,13 +199,14 @@ def test_deepseek_provider_rejects_invalid_structured_output(
 def test_model_input_contains_only_aggregated_analysis_results() -> None:
     model_input = build_model_input(_sample_request())
 
+    assert '"analysis_context"' in model_input
+    assert '"schema_mapping"' in model_input
     assert '"data_quality"' in model_input
     assert '"metrics"' in model_input
     assert '"funnel"' in model_input
     assert '"channels"' in model_input
     assert '"metadata"' not in model_input
-    assert '"user_id"' not in model_input
-    assert '"register_time"' not in model_input
+    assert '"raw_rows"' not in model_input
     assert SAMPLE_FILE.name not in model_input
 
 
@@ -223,11 +222,11 @@ def test_ai_report_request_rejects_extra_raw_data_fields() -> None:
 def test_report_rejects_channel_not_present_in_input() -> None:
     request = _sample_request()
     valid_report = MockAIReportProvider().generate(request)
-    invalid_opportunity = valid_report.channel_opportunities[0].model_copy(
+    invalid_strategy = valid_report.channel_strategy[0].model_copy(
         update={"channel": "虚构渠道"}
     )
     invalid_report = valid_report.model_copy(
-        update={"channel_opportunities": [invalid_opportunity]}
+        update={"channel_strategy": [invalid_strategy]}
     )
 
     class InvalidProvider:
@@ -243,6 +242,46 @@ def test_report_rejects_channel_not_present_in_input() -> None:
         generate_ai_report(request, provider=InvalidProvider())
 
 
+def test_mock_report_builds_strategy_from_channel_performance_gap() -> None:
+    request = _sample_request()
+    largest_channel = max(
+        request.channels,
+        key=lambda name: request.channels[
+            name
+        ].user_counts.registered_users,
+    )
+    highest_quality_channel = max(
+        request.channels,
+        key=lambda name: (
+            request.channels[name].conversion_rates.paid_rate,
+            request.channels[name].user_counts.paid_users,
+        ),
+    )
+
+    assert largest_channel != highest_quality_channel
+
+    report = MockAIReportProvider().generate(request)
+    strategies = {
+        item.channel: item
+        for item in report.channel_strategy
+    }
+
+    assert largest_channel in strategies
+    assert highest_quality_channel in strategies
+    assert (
+        str(request.channels[largest_channel].user_counts.registered_users)
+        in strategies[largest_channel].diagnosis
+    )
+    assert (
+        f"{request.channels[highest_quality_channel].conversion_rates.paid_rate * 100:.2f}%"
+        in strategies[highest_quality_channel].diagnosis
+    )
+    assert (
+        strategies[largest_channel].strategy
+        != strategies[highest_quality_channel].strategy
+    )
+
+
 def _sample_request() -> AIReportRequest:
     data_frame = pd.read_excel(SAMPLE_FILE, engine="openpyxl")
     analysis = build_growth_analysis(
@@ -251,13 +290,33 @@ def _sample_request() -> AIReportRequest:
     )
     return AIReportRequest.model_validate(
         {
-            key: analysis[key]
-            for key in (
+            **{
+                key: analysis[key]
+                for key in (
                 "data_quality",
                 "metrics",
                 "funnel",
                 "channels",
-            )
+                )
+            },
+            "schema_mapping": {
+                "mapping": {
+                    field: field
+                    for field in REQUIRED_COLUMNS
+                },
+                "source": "fixed",
+            },
+            "analysis_context": {
+                "analysis_type": "user_growth",
+                "business_type": "local_service",
+                "recommended_metrics": [
+                    "注册用户数",
+                    "预约率",
+                    "到店率",
+                    "成交率",
+                    "GMV",
+                ],
+            },
         }
     )
 

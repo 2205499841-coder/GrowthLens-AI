@@ -2,9 +2,11 @@
 
 ## MVP 边界
 
-AI 报告模块不读取 Excel 文件或用户明细，只接收后端已经计算完成的四类
-聚合结果：
+AI 报告模块不读取 Excel 文件或用户明细，只接收后端已经完成的数据理解
+上下文与聚合结果：
 
+- `analysis_context`
+- `schema_mapping`
 - `data_quality`
 - `metrics`
 - `funnel`
@@ -16,22 +18,22 @@ AI 报告模块不读取 Excel 文件或用户明细，只接收后端已经计�
 
 报告使用固定结构输出：
 
-- `summary`：一句话总结；
-- `key_insights`：2-3 条洞察，包含数据依据、原因假设和置信度；
-- `channel_opportunities`：只引用输入中存在的渠道；
+- `summary`：一句话业务诊断；
+- `key_findings`：2-3 条问题诊断，每条包含问题、证据和对应建议；
+- `channel_strategy`：基于真实渠道表现差异生成差异化策略；
 - `growth_actions`：2-3 条行动建议、目标指标和预期方向；
-- `limitations`：说明数据限制。
 
 ## Prompt 设计
 
 System Prompt 将角色、任务、格式与事实约束分开定义，核心规则为：
 
-1. 只使用输入中的四类聚合结果；
-2. evidence 中的数字必须来自输入；
-3. 不补充渠道、用户画像、行业基准或业务事件；
-4. interpretation 必须以“可能”“推测”或“假设”表达；
-5. 样本量或完整度不足时下调置信度；
-6. 不声称读取过 Excel 原始数据。
+1. 用 `analysis_context` 确定分析类型和优先指标；
+2. 用 `schema_mapping` 理解字段语义，不读取原始数据；
+3. 只使用 `metrics`、`funnel`、`channels` 中的结果作为诊断事实；
+4. evidence 中的数字必须来自输入；
+5. 不补充渠道、用户画像、行业基准或业务事件；
+6. 不把原因假设写成事实；
+7. 不声称读取过 Excel 原始数据。
 
 完整 Prompt 常量位于 `backend/app/services/ai_report.py`。
 

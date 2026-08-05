@@ -1233,6 +1233,15 @@ tbody tr:hover {
   padding: 5px 8px;
 }
 
+.finding-badge {
+  background: var(--brand-soft);
+  border-radius: 999px;
+  color: var(--brand);
+  font-size: 9px;
+  font-weight: 750;
+  padding: 5px 8px;
+}
+
 .confidence-high {
   background: #e9f7f1;
   color: #13705a;

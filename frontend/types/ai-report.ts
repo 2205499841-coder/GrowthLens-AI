@@ -1,18 +1,15 @@
-export type Confidence = "high" | "medium" | "low";
 export type ExpectedDirection = "increase" | "decrease" | "maintain";
 
-export interface KeyInsight {
-  title: string;
+export interface KeyFinding {
+  issue: string;
   evidence: string;
-  interpretation: string;
-  confidence: Confidence;
+  recommendation: string;
 }
 
-export interface ChannelOpportunity {
+export interface ChannelStrategy {
   channel: string;
-  opportunity: string;
-  evidence: string;
-  confidence: Confidence;
+  diagnosis: string;
+  strategy: string;
 }
 
 export interface GrowthAction {
@@ -23,8 +20,7 @@ export interface GrowthAction {
 
 export interface AIReport {
   summary: string;
-  key_insights: KeyInsight[];
-  channel_opportunities: ChannelOpportunity[];
+  key_findings: KeyFinding[];
+  channel_strategy: ChannelStrategy[];
   growth_actions: GrowthAction[];
-  limitations: string[];
 }

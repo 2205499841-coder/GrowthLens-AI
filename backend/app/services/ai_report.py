@@ -8,9 +8,9 @@ from app.core.config import settings
 from app.schemas.ai_report import (
     AIReportRequest,
     AIReportResponse,
-    ChannelOpportunity,
+    ChannelStrategy,
     GrowthAction,
-    KeyInsight,
+    KeyFinding,
 )
 from app.schemas.analysis import FunnelStage, GrowthMetrics
 
@@ -19,27 +19,24 @@ logger = logging.getLogger(__name__)
 
 
 REPORT_JSON_EXAMPLE = {
-    "summary": "一句话总结",
-    "key_insights": [
+    "summary": "基于完整分析上下文的一句话业务诊断",
+    "key_findings": [
         {
-            "title": "洞察标题",
-            "evidence": "输入数据中的指标依据",
-            "interpretation": "使用可能、推测或假设表达的原因解释",
-            "confidence": "high",
+            "issue": "需要优先解决的增长问题",
+            "evidence": "输入指标、漏斗或渠道结果中的数据依据",
+            "recommendation": "与问题和证据直接对应的建议",
         },
         {
-            "title": "第二条洞察标题",
-            "evidence": "输入数据中的指标依据",
-            "interpretation": "需要进一步验证的原因假设",
-            "confidence": "medium",
+            "issue": "第二个增长问题",
+            "evidence": "可追溯的数据依据",
+            "recommendation": "需要通过实验验证的建议",
         },
     ],
-    "channel_opportunities": [
+    "channel_strategy": [
         {
             "channel": "输入中真实存在的渠道名",
-            "opportunity": "渠道机会说明",
-            "evidence": "渠道指标依据",
-            "confidence": "medium",
+            "diagnosis": "该渠道的规模、转化和收入表现诊断",
+            "strategy": "针对该渠道的差异化策略",
         }
     ],
     "growth_actions": [
@@ -54,21 +51,22 @@ REPORT_JSON_EXAMPLE = {
             "expected_direction": "maintain",
         },
     ],
-    "limitations": ["当前聚合数据无法支持的判断"],
 }
 
 
-SYSTEM_PROMPT = f"""你是 GrowthLens AI，一名写真行业用户增长分析顾问。
+SYSTEM_PROMPT = f"""你是 GrowthLens AI，一名负责业务诊断的增长分析顾问。
 
-你只能基于用户消息中提供的 data_quality、metrics、funnel、channels 四类聚合结果生成报告。
+你只能基于用户消息中的 analysis_context、schema_mapping、data_quality、metrics、funnel、channels 生成报告。
+analysis_context 用于确定分析类型、业务类型和优先指标；schema_mapping 只用于理解字段语义；
+metrics、funnel、channels 是所有诊断证据和建议的事实来源。
 
 输出要求：
 1. 只输出一个合法 JSON 对象，不要输出 Markdown、代码块或额外说明。
-2. summary 用一句话概括整体增长表现。
-3. key_insights 输出 2-3 条，每条包含标题、准确的数据依据、原因假设和置信度。
-4. channel_opportunities 只能引用输入 channels 中存在的渠道。
-5. growth_actions 输出 2-3 条可执行建议，并标明目标指标与预期方向。
-6. limitations 说明仅凭当前数据无法判断的事项。
+2. summary 用一句话给出与 analysis_context 一致的整体业务诊断。
+3. key_findings 输出 2-3 条，每条严格包含 issue、evidence、recommendation。
+4. evidence 必须引用输入中的实际指标或漏斗结果，建议必须与该证据直接对应。
+5. channel_strategy 只能引用输入 channels 中存在的渠道，并体现渠道之间的规模、转化或收入差异。
+6. growth_actions 输出 2-3 条可执行建议，并标明目标指标与预期方向。
 
 JSON 结构示例（仅表示字段结构，不是可引用的业务事实）：
 {json.dumps(REPORT_JSON_EXAMPLE, ensure_ascii=False, indent=2)}
@@ -76,8 +74,9 @@ JSON 结构示例（仅表示字段结构，不是可引用的业务事实）：
 事实约束：
 - 不得使用输入之外的数字、渠道、用户画像、行业基准或业务事件。
 - evidence 中的数字必须能在输入数据中找到。
-- interpretation 必须使用“可能”“推测”或“假设”等措辞，不得把原因假设写成事实。
-- 样本量或数据完整度不足时，confidence 必须降为 medium 或 low。
+- 不得把原因假设写成事实；需要解释原因时，必须使用“可能”“推测”或“假设”等措辞。
+- 数据完整度或样本量不足时，只能给出验证建议，不得形成确定性判断。
+- recommended_metrics 只能指导报告关注重点，不能被当作已计算的指标值。
 - 不得声称读取过 Excel 原始数据；你只接收到后端计算后的聚合指标。
 """
 
@@ -96,7 +95,7 @@ class AIReportProviderError(RuntimeError):
 def build_model_input(request: AIReportRequest) -> str:
     payload = request.model_dump(mode="json")
     return (
-        "请根据以下后端聚合分析结果生成增长报告。"
+        "请根据以下完整分析上下文生成业务诊断报告。"
         "不要补充输入之外的事实，只返回 JSON：\n"
         f"{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
     )
@@ -330,66 +329,16 @@ class MockAIReportProvider:
             channel_items,
             lambda item: item[1].user_counts.registered_users,
         )
-        quality = request.data_quality
         metrics = request.metrics
-
-        insights = [
-            KeyInsight(
-                title=f"{previous_stage.label}到{bottleneck.label}是主要流失环节",
-                evidence=(
-                    f"{previous_stage.label}阶段 {previous_stage.user_count} 人，"
-                    f"{bottleneck.label}阶段 {bottleneck.user_count} 人，"
-                    f"流失 {bottleneck.dropoff_count} 人，"
-                    f"阶段转化率 {_percent(bottleneck.conversion_rate_from_previous)}。"
-                ),
-                interpretation=(
-                    f"该阶段流失较集中，可能与从{previous_stage.label}"
-                    f"进入{bottleneck.label}时的承接效率有关，需结合页面和运营记录验证。"
-                ),
-                confidence=_confidence(
-                    previous_stage.user_count,
-                    quality.data_completeness,
-                ),
-            ),
-            _channel_quality_insight(
-                highest_quality,
-                quality.data_completeness,
-            ),
-        ]
-
-        if largest_channel[0] != highest_quality[0]:
-            insights.append(
-                _scale_quality_insight(
-                    largest_channel,
-                    highest_quality,
-                    quality.data_completeness,
-                )
-            )
-        else:
-            insights.append(
-                KeyInsight(
-                    title="头部渠道同时贡献用户规模与成交效率",
-                    evidence=(
-                        f"{largest_channel[0]}注册用户 "
-                        f"{largest_channel[1].user_counts.registered_users} 人，"
-                        f"成交率 "
-                        f"{_percent(largest_channel[1].conversion_rates.paid_rate)}，"
-                        f"GMV {_currency(largest_channel[1].revenue.gmv)}。"
-                    ),
-                    interpretation=(
-                        "该渠道可能是当前增长的主要支点，但仍需结合获客成本判断增量价值。"
-                    ),
-                    confidence=_confidence(
-                        largest_channel[1].user_counts.registered_users,
-                        quality.data_completeness,
-                    ),
-                )
-            )
-
-        opportunities = _build_channel_opportunities(
+        findings = _build_key_findings(
+            bottleneck,
+            previous_stage,
             highest_quality,
             largest_channel,
-            quality.data_completeness,
+        )
+        channel_strategy = _build_channel_strategy(
+            highest_quality,
+            largest_channel,
         )
         actions = _build_growth_actions(
             bottleneck,
@@ -397,19 +346,20 @@ class MockAIReportProvider:
             highest_quality,
             largest_channel,
         )
-        limitations = _build_limitations(request)
+        analysis_label = _analysis_type_label(
+            request.analysis_context.analysis_type
+        )
 
         return AIReportResponse(
             summary=(
-                f"本期 {metrics.user_counts.registered_users} 名注册用户最终形成 "
+                f"本次{analysis_label}显示，{metrics.user_counts.registered_users} 名注册用户形成 "
                 f"{metrics.user_counts.paid_users} 名成交用户和 "
                 f"{_currency(metrics.revenue.gmv)} GMV，"
-                f"主要优化空间位于{previous_stage.label}到{bottleneck.label}阶段。"
+                f"当前首要优化点是{previous_stage.label}到{bottleneck.label}的转化承接。"
             ),
-            key_insights=insights,
-            channel_opportunities=opportunities,
+            key_findings=findings,
+            channel_strategy=channel_strategy,
             growth_actions=actions,
-            limitations=limitations,
         )
 
 
@@ -436,99 +386,85 @@ def _select_channel(
     return max(channels, key=score)
 
 
-def _channel_quality_insight(
-    channel: tuple[str, GrowthMetrics],
-    completeness: float,
-) -> KeyInsight:
-    name, channel_metrics = channel
-    return KeyInsight(
-        title=f"{name}当前成交效率领先",
-        evidence=(
-            f"{name}注册用户 {channel_metrics.user_counts.registered_users} 人，"
-            f"到店用户 {channel_metrics.user_counts.visit_users} 人，"
-            f"成交用户 {channel_metrics.user_counts.paid_users} 人，"
-            f"成交率 {_percent(channel_metrics.conversion_rates.paid_rate)}。"
-        ),
-        interpretation=(
-            "该渠道用户可能具有更高的成交意愿，"
-            "但是否值得扩大投入仍需结合渠道成本验证。"
-        ),
-        confidence=_confidence(
-            channel_metrics.user_counts.visit_users,
-            completeness,
-        ),
-    )
-
-
-def _scale_quality_insight(
-    largest: tuple[str, GrowthMetrics],
-    quality: tuple[str, GrowthMetrics],
-    completeness: float,
-) -> KeyInsight:
-    largest_name, largest_metrics = largest
-    quality_name, quality_metrics = quality
-    return KeyInsight(
-        title="渠道规模与成交效率存在差异",
-        evidence=(
-            f"{largest_name}注册用户最多，为 "
-            f"{largest_metrics.user_counts.registered_users} 人，成交率 "
-            f"{_percent(largest_metrics.conversion_rates.paid_rate)}；"
-            f"{quality_name}成交率最高，为 "
-            f"{_percent(quality_metrics.conversion_rates.paid_rate)}。"
-        ),
-        interpretation=(
-            f"{largest_name}可能更适合承担获客规模，"
-            f"{quality_name}可能更适合验证高意向转化策略。"
-        ),
-        confidence=_confidence(
-            min(
-                largest_metrics.user_counts.registered_users,
-                quality_metrics.user_counts.visit_users,
-            ),
-            completeness,
-        ),
-    )
-
-
-def _build_channel_opportunities(
+def _build_key_findings(
+    bottleneck: FunnelStage,
+    previous_stage: FunnelStage,
     quality: tuple[str, GrowthMetrics],
     largest: tuple[str, GrowthMetrics],
-    completeness: float,
-) -> list[ChannelOpportunity]:
-    quality_name, quality_metrics = quality
+) -> list[KeyFinding]:
     largest_name, largest_metrics = largest
-    opportunities = [
-        ChannelOpportunity(
-            channel=quality_name,
-            opportunity="保留高成交效率，验证扩大有效流量后的承接能力。",
+    quality_name, quality_metrics = quality
+    findings = [
+        KeyFinding(
+            issue=f"{previous_stage.label}到{bottleneck.label}是主要漏斗损耗点",
             evidence=(
-                f"成交率 {_percent(quality_metrics.conversion_rates.paid_rate)}，"
-                f"成交用户 {quality_metrics.user_counts.paid_users} 人，"
-                f"GMV {_currency(quality_metrics.revenue.gmv)}。"
+                f"{previous_stage.label}阶段 {previous_stage.user_count} 人，"
+                f"{bottleneck.label}阶段 {bottleneck.user_count} 人，"
+                f"流失 {bottleneck.dropoff_count} 人，阶段转化率 "
+                f"{_percent(bottleneck.conversion_rate_from_previous)}。"
             ),
-            confidence=_confidence(
-                quality_metrics.user_counts.visit_users,
-                completeness,
+            recommendation=(
+                f"优先复盘{previous_stage.label}到{bottleneck.label}的页面路径和运营触达，"
+                "用小流量实验验证承接改动。"
+            ),
+        ),
+        KeyFinding(
+            issue=(
+                "渠道规模与成交效率存在差异"
+                if largest_name != quality_name
+                else "头部渠道同时承载主要规模与成交效率"
+            ),
+            evidence=(
+                f"{largest_name}注册用户 {largest_metrics.user_counts.registered_users} 人，"
+                f"成交率 {_percent(largest_metrics.conversion_rates.paid_rate)}；"
+                f"{quality_name}成交率 {_percent(quality_metrics.conversion_rates.paid_rate)}，"
+                f"成交用户 {quality_metrics.user_counts.paid_users} 人。"
+            ),
+            recommendation=(
+                f"分别用{largest_name}验证规模渠道的漏斗优化，"
+                f"用{quality_name}验证高质量流量扩量后成交率是否稳定。"
             ),
         )
     ]
-    if largest_name != quality_name:
-        opportunities.append(
-            ChannelOpportunity(
-                channel=largest_name,
-                opportunity="优先排查高流量渠道的成交承接，缩小规模与质量差距。",
-                evidence=(
-                    f"注册用户 {largest_metrics.user_counts.registered_users} 人，"
-                    f"成交率 {_percent(largest_metrics.conversion_rates.paid_rate)}，"
-                    f"成交用户 {largest_metrics.user_counts.paid_users} 人。"
+    return findings
+
+
+def _build_channel_strategy(
+    quality: tuple[str, GrowthMetrics],
+    largest: tuple[str, GrowthMetrics],
+) -> list[ChannelStrategy]:
+    quality_name, quality_metrics = quality
+    largest_name, largest_metrics = largest
+    strategies = [
+        ChannelStrategy(
+            channel=largest_name,
+            diagnosis=(
+                f"注册用户 {largest_metrics.user_counts.registered_users} 人，"
+                f"成交率 {_percent(largest_metrics.conversion_rates.paid_rate)}，"
+                f"GMV {_currency(largest_metrics.revenue.gmv)}。"
+            ),
+            strategy=(
+                "优先优化高流量用户从预约到成交的承接效率，"
+                "并以阶段转化率作为实验判断指标。"
+            ),
+        )
+    ]
+    if quality_name != largest_name:
+        strategies.append(
+            ChannelStrategy(
+                channel=quality_name,
+                diagnosis=(
+                    f"注册用户 {quality_metrics.user_counts.registered_users} 人，"
+                    f"成交率 {_percent(quality_metrics.conversion_rates.paid_rate)}，"
+                    f"GMV {_currency(quality_metrics.revenue.gmv)}。"
                 ),
-                confidence=_confidence(
-                    largest_metrics.user_counts.registered_users,
-                    completeness,
+                strategy=(
+                    "保留当前高成交效率，分批扩大有效流量，"
+                    "持续观察成交率和成交用户数是否同步改善。"
                 ),
             )
         )
-    return opportunities
+    return strategies
 
 
 def _build_growth_actions(
@@ -571,31 +507,13 @@ def _build_growth_actions(
     return actions
 
 
-def _build_limitations(request: AIReportRequest) -> list[str]:
-    quality = request.data_quality
-    limitations = [
-        "报告仅基于单次上传后的聚合结果，不能判断指标的时间趋势或因果关系。",
-        "输入未包含渠道投放成本，当前无法比较 CAC、ROI 或真实增量价值。",
-        "输入未包含复购、退款与留存字段，当前建议只覆盖注册到成交链路。",
-    ]
-    if quality.anomaly_count:
-        limitations.append(
-            f"数据中有 {quality.anomaly_count} 条异常记录，结论需结合数据质量摘要复核。"
-        )
-    if quality.valid_user_count < 30:
-        limitations.append(
-            f"当前仅有 {quality.valid_user_count} 名有效用户，样本量较小，洞察置信度已下调。"
-        )
-    return limitations
-
-
 def _validate_report_channels(
     report: AIReportResponse,
     allowed_channels: set[str],
 ) -> None:
     reported_channels = {
-        opportunity.channel
-        for opportunity in report.channel_opportunities
+        strategy.channel
+        for strategy in report.channel_strategy
     }
     unknown_channels = reported_channels - allowed_channels
     if unknown_channels:
@@ -603,12 +521,13 @@ def _validate_report_channels(
         raise AIReportProviderError(f"AI 报告引用了未知渠道：{names}")
 
 
-def _confidence(sample_size: int, completeness: float) -> str:
-    if sample_size < 30 or completeness < 0.75:
-        return "low"
-    if sample_size < 100 or completeness < 0.9:
-        return "medium"
-    return "high"
+def _analysis_type_label(analysis_type: str) -> str:
+    labels = {
+        "user_growth": "用户增长分析",
+        "ecommerce_conversion": "电商转化分析",
+        "content_growth": "内容增长分析",
+    }
+    return labels.get(analysis_type, "用户增长分析")
 
 
 def _percent(value: float) -> str:
