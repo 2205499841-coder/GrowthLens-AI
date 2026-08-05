@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AIReportSection } from "@/components/ai-report-section";
+import { AnalysisContextPanel } from "@/components/analysis-context-panel";
 import { ChannelBarChart } from "@/components/channel-bar-chart";
 import { SchemaMappingPanel } from "@/components/schema-mapping-panel";
 import {
@@ -95,10 +96,13 @@ export function DashboardView({ result }: DashboardViewProps) {
         title="AI数据理解"
         description="展示上传字段如何对齐到 GrowthLens 标准分析口径。"
       >
-        <SchemaMappingPanel
-          fallbackMapping={result.data_ingestion.field_mapping}
-          schemaMapping={result.schema_mapping}
-        />
+        <div className="data-understanding-stack">
+          <AnalysisContextPanel context={result.analysis_context} />
+          <SchemaMappingPanel
+            fallbackMapping={result.data_ingestion.field_mapping}
+            schemaMapping={result.schema_mapping}
+          />
+        </div>
       </DashboardSection>
 
       <DashboardSection

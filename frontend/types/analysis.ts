@@ -57,10 +57,28 @@ export interface SchemaMappingSummary {
   source: "fixed" | "ai";
 }
 
+export type AnalysisType =
+  | "user_growth"
+  | "ecommerce_conversion"
+  | "content_growth";
+
+export type BusinessType =
+  | "general"
+  | "local_service"
+  | "ecommerce"
+  | "content";
+
+export interface AnalysisContext {
+  analysis_type: AnalysisType;
+  business_type: BusinessType;
+  recommended_metrics: string[];
+}
+
 export interface GrowthAnalysisResult {
   metadata: AnalysisMetadata;
   data_ingestion: DataIngestionSummary;
   schema_mapping?: SchemaMappingSummary;
+  analysis_context?: AnalysisContext;
   data_quality: DataQualitySummary;
   metrics: GrowthMetrics;
   funnel: {

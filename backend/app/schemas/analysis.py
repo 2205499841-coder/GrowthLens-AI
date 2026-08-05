@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.analysis_context import AnalysisContext
 from app.schemas.ingestion import DataIngestionSummary
 
 
@@ -71,6 +72,7 @@ class GrowthAnalysisResponse(BaseModel):
     metadata: AnalysisMetadata
     data_ingestion: DataIngestionSummary
     schema_mapping: AppliedSchemaMapping
+    analysis_context: AnalysisContext
     data_quality: DataQualitySummary
     metrics: GrowthMetrics
     funnel: FunnelAnalysis

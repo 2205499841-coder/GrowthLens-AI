@@ -2,12 +2,14 @@ from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 import app.api.analysis as analysis_api
 from app.main import app
 from app.schemas.schema_mapping import SchemaMappingResponse
+from app.services.analysis_classifier import DEFAULT_ANALYSIS_CONTEXT
 from app.services.excel_parser import REQUIRED_COLUMNS
 
 
@@ -17,6 +19,17 @@ SAMPLE_FILE = (
     / "sample_data"
     / "portrait_growth_demo.xlsx"
 )
+
+
+@pytest.fixture(autouse=True)
+def stub_analysis_classifier(monkeypatch) -> None:
+    monkeypatch.setattr(
+        analysis_api,
+        "classify_analysis_context",
+        lambda _schema_mapping, _columns: (
+            DEFAULT_ANALYSIS_CONTEXT.model_copy(deep=True)
+        ),
+    )
 
 
 def test_analyze_growth_excel_returns_unified_structure(monkeypatch) -> None:
@@ -45,6 +58,7 @@ def test_analyze_growth_excel_returns_unified_structure(monkeypatch) -> None:
         "metadata",
         "data_ingestion",
         "schema_mapping",
+        "analysis_context",
         "data_quality",
         "metrics",
         "funnel",
@@ -62,6 +76,9 @@ def test_analyze_growth_excel_returns_unified_structure(monkeypatch) -> None:
         "mapping": {field: field for field in REQUIRED_COLUMNS},
         "source": "fixed",
     }
+    assert payload["analysis_context"] == (
+        DEFAULT_ANALYSIS_CONTEXT.model_dump(mode="json")
+    )
     assert payload["data_quality"]["original_user_count"] == 3
     assert payload["data_quality"]["valid_user_count"] == 3
     assert payload["metrics"]["user_counts"]["registered_users"] == 3

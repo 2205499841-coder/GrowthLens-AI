@@ -5,9 +5,12 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from app.core.config import settings
 from app.schemas.analysis import GrowthAnalysisResponse
 from app.schemas.ingestion import ExcelIngestionErrorResponse
+from app.services.analysis_classifier import classify_analysis_context
 from app.services.data_cleaner import clean_growth_data
 from app.services.excel_parser import (
     ExcelParseError,
+    ParsedExcel,
+    REQUIRED_COLUMNS,
     parse_excel,
     validate_file_name,
 )
@@ -45,6 +48,7 @@ async def analyze_growth_excel(
         mapping_source = "fixed"
         try:
             parsed_excel = parse_excel(file_content)
+            classifier_columns = _get_fixed_source_columns(parsed_excel)
         except ExcelParseError as exc:
             if exc.error != "Excel字段不完整":
                 raise
@@ -58,6 +62,7 @@ async def analyze_growth_excel(
                     mapping_result,
                 )
                 mapping_source = "ai"
+                classifier_columns = list(extracted_schema.columns)
             except SchemaMappingError as mapping_exc:
                 logger.exception("AI 字段识别失败：%r", mapping_exc)
                 raise HTTPException(
@@ -68,16 +73,32 @@ async def analyze_growth_excel(
                     },
                 ) from mapping_exc
 
+        schema_mapping = {
+            "mapping": parsed_excel.field_mapping,
+            "source": mapping_source,
+        }
+        analysis_context = classify_analysis_context(
+            schema_mapping,
+            classifier_columns,
+        )
         cleaning_result = clean_growth_data(parsed_excel.data_frame)
         analysis = build_growth_analysis(
             cleaning_result,
             file_name=file_name,
         )
         analysis["data_ingestion"] = parsed_excel.data_ingestion_summary
-        analysis["schema_mapping"] = {
-            "mapping": parsed_excel.field_mapping,
-            "source": mapping_source,
-        }
+        analysis["schema_mapping"] = schema_mapping
+        analysis["analysis_context"] = analysis_context.model_dump(mode="json")
         return GrowthAnalysisResponse.model_validate(analysis)
     finally:
         await file.close()
+
+
+def _get_fixed_source_columns(parsed_excel: ParsedExcel) -> list[str]:
+    columns = list(parsed_excel.field_mapping.values())
+    for column in parsed_excel.data_frame.columns:
+        source_column = str(column)
+        if source_column in REQUIRED_COLUMNS or source_column in columns:
+            continue
+        columns.append(source_column)
+    return columns
