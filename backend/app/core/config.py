@@ -50,7 +50,7 @@ class Settings:
     ai_model: str = field(
         default_factory=lambda: os.getenv(
             "AI_MODEL",
-            "deepseek-chat",
+            "deepseek-v4-pro",
         ).strip()
     )
     openai_api_key: str | None = field(

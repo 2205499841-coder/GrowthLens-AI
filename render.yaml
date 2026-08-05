@@ -14,7 +14,7 @@ services:
       - key: AI_PROVIDER
         value: deepseek
       - key: AI_MODEL
-        value: deepseek-chat
+        value: deepseek-v4-pro
       - key: DEEPSEEK_API_KEY
         sync: false
       - key: BACKEND_CORS_ORIGINS

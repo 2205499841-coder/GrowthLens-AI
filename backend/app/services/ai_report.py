@@ -143,6 +143,7 @@ class OpenAICompatibleAIReportProvider:
         api_key_env: str,
         model: str,
         base_url: str | None = None,
+        completion_options: dict[str, Any] | None = None,
         client: Any | None = None,
     ) -> None:
         if not api_key:
@@ -158,6 +159,7 @@ class OpenAICompatibleAIReportProvider:
         self.display_name = display_name
         self.model = model
         self.base_url = base_url
+        self.completion_options = completion_options or {}
         self._client = client or _create_openai_client(
             api_key=api_key,
             base_url=base_url,
@@ -174,6 +176,7 @@ class OpenAICompatibleAIReportProvider:
                 response_format={"type": "json_object"},
                 max_tokens=2500,
                 stream=False,
+                **self.completion_options,
             )
         except Exception as exc:
             logger.exception(
@@ -224,6 +227,11 @@ class DeepSeekAIReportProvider(OpenAICompatibleAIReportProvider):
             api_key_env="DEEPSEEK_API_KEY",
             model=model,
             base_url="https://api.deepseek.com",
+            completion_options={
+                "extra_body": {
+                    "thinking": {"type": "disabled"},
+                }
+            },
             client=client,
         )
 

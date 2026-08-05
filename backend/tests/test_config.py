@@ -35,7 +35,7 @@ def test_ai_provider_defaults_to_deepseek(monkeypatch) -> None:
     configured_settings = Settings()
 
     assert configured_settings.ai_provider == "deepseek"
-    assert configured_settings.ai_model == "deepseek-chat"
+    assert configured_settings.ai_model == "deepseek-v4-pro"
     assert configured_settings.deepseek_api_key is None
 
 

@@ -62,7 +62,7 @@ curl -X POST \
 ```bash
 AI_PROVIDER=deepseek \
 DEEPSEEK_API_KEY=your-key \
-AI_MODEL=deepseek-chat \
+AI_MODEL=deepseek-v4-pro \
 uvicorn app.main:app --reload --port 8000
 ```
 

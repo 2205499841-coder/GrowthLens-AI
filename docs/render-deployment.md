@@ -34,7 +34,7 @@ Build Command、Start Command 和 Health Check Path。
 | Key | Value | 是否敏感 | 配置位置 |
 | --- | --- | --- | --- |
 | `AI_PROVIDER` | `deepseek` | 否 | Blueprint 已设置 |
-| `AI_MODEL` | `deepseek-chat` | 否 | Blueprint 已设置 |
+| `AI_MODEL` | `deepseek-v4-pro` | 否 | Blueprint 已设置 |
 | `DEEPSEEK_API_KEY` | 真实 DeepSeek API Key | 是 | 仅 Render Dashboard |
 | `BACKEND_CORS_ORIGINS` | 实际 Vercel HTTPS 域名 | 否 | Render Dashboard |
 | `PYTHON_VERSION` | `3.12.13` | 否 | Blueprint 已设置 |

@@ -60,7 +60,7 @@ System Prompt 同时包含 JSON 字段示例，并要求模型不输出 Markdown
 ```env
 AI_PROVIDER=deepseek
 DEEPSEEK_API_KEY=
-AI_MODEL=deepseek-chat
+AI_MODEL=deepseek-v4-pro
 ```
 
 `DEEPSEEK_API_KEY` 只从运行环境读取，不写入代码或 Git。缺少密钥时接口

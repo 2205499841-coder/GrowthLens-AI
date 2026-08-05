@@ -65,7 +65,10 @@ def test_ai_report_endpoint_returns_structured_report(monkeypatch) -> None:
     } <= {"increase", "decrease", "maintain"}
 
 
-def test_ai_report_endpoint_reports_missing_deepseek_key(monkeypatch) -> None:
+def test_ai_report_endpoint_reports_missing_deepseek_key(
+    monkeypatch,
+    caplog,
+) -> None:
     request = _sample_request()
     monkeypatch.setattr(
         ai_report_service,
@@ -74,17 +77,20 @@ def test_ai_report_endpoint_reports_missing_deepseek_key(monkeypatch) -> None:
             ai_provider="deepseek",
             deepseek_api_key=None,
             openai_api_key=None,
-            ai_model="deepseek-chat",
+            ai_model="deepseek-v4-pro",
         ),
     )
 
-    response = client.post(
-        "/api/ai/report",
-        json=request.model_dump(mode="json"),
-    )
+    with caplog.at_level("ERROR", logger="app.api.ai_reports"):
+        response = client.post(
+            "/api/ai/report",
+            json=request.model_dump(mode="json"),
+        )
 
     assert response.status_code == 503
     assert "DEEPSEEK_API_KEY" in response.json()["detail"]
+    assert "AI 报告生成失败" in caplog.text
+    assert any(record.exc_info is not None for record in caplog.records)
 
 
 def test_deepseek_provider_uses_openai_compatible_json_call() -> None:
@@ -93,7 +99,7 @@ def test_deepseek_provider_uses_openai_compatible_json_call() -> None:
     fake_client = FakeOpenAIClient(expected_report.model_dump_json())
     provider = DeepSeekAIReportProvider(
         api_key="test-key",
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         client=fake_client,
     )
 
@@ -103,10 +109,13 @@ def test_deepseek_provider_uses_openai_compatible_json_call() -> None:
     assert provider.base_url == "https://api.deepseek.com"
     assert len(fake_client.calls) == 1
     call = fake_client.calls[0]
-    assert call["model"] == "deepseek-chat"
+    assert call["model"] == "deepseek-v4-pro"
     assert call["response_format"] == {"type": "json_object"}
     assert call["max_tokens"] == 2500
     assert call["stream"] is False
+    assert call["extra_body"] == {
+        "thinking": {"type": "disabled"},
+    }
     assert call["messages"][0]["role"] == "system"
     assert "JSON" in call["messages"][0]["content"]
     assert '"data_quality"' in call["messages"][1]["content"]
@@ -127,6 +136,7 @@ def test_openai_provider_reuses_same_compatible_adapter() -> None:
     assert report == expected_report
     assert provider.base_url is None
     assert fake_client.calls[0]["model"] == "future-openai-model"
+    assert "extra_body" not in fake_client.calls[0]
 
 
 def test_deepseek_provider_requires_api_key() -> None:
@@ -136,7 +146,7 @@ def test_deepseek_provider_requires_api_key() -> None:
     ):
         DeepSeekAIReportProvider(
             api_key=None,
-            model="deepseek-chat",
+            model="deepseek-v4-pro",
         )
 
 
@@ -159,7 +169,7 @@ def test_deepseek_provider_logs_api_exception_details(caplog) -> None:
     )
     provider = DeepSeekAIReportProvider(
         api_key="test-key",
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         client=failing_client,
     )
 
@@ -180,7 +190,7 @@ def test_deepseek_provider_rejects_invalid_structured_output(
 ) -> None:
     provider = DeepSeekAIReportProvider(
         api_key="test-key",
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         client=FakeOpenAIClient(content),
     )
 
