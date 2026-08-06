@@ -8,6 +8,7 @@ import type { AIReport, ExpectedDirection } from "@/types/ai-report";
 
 interface AIReportSectionProps {
   analysis: GrowthAnalysisResult;
+  onReportGenerated?: (report: AIReport) => void;
 }
 
 const DIRECTION_LABELS: Record<ExpectedDirection, string> = {
@@ -18,6 +19,7 @@ const DIRECTION_LABELS: Record<ExpectedDirection, string> = {
 
 export function AIReportSection({
   analysis,
+  onReportGenerated,
 }: AIReportSectionProps) {
   const [report, setReport] = useState<AIReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export function AIReportSection({
     try {
       const nextReport = await generateAIReport(analysis);
       setReport(nextReport);
+      onReportGenerated?.(nextReport);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -189,7 +192,6 @@ function AIReportContent({ report }: { report: AIReport }) {
           </ol>
         </div>
       </div>
-
     </div>
   );
 }

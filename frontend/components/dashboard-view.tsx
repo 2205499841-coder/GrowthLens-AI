@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { AIGrowthDiagnosis } from "@/components/ai-growth-diagnosis";
 import { AIReportSection } from "@/components/ai-report-section";
 import { AnalysisContextPanel } from "@/components/analysis-context-panel";
 import { ChannelBarChart } from "@/components/channel-bar-chart";
@@ -15,8 +16,11 @@ import type {
   GrowthAnalysisResult,
   GrowthMetrics,
 } from "@/types/analysis";
+import type { AIReport } from "@/types/ai-report";
 
 interface DashboardViewProps {
+  aiReport: AIReport | null;
+  onAIReportGenerated: (report: AIReport) => void;
   result: GrowthAnalysisResult;
 }
 
@@ -27,7 +31,11 @@ interface SummaryCard {
   tone?: "default" | "warning";
 }
 
-export function DashboardView({ result }: DashboardViewProps) {
+export function DashboardView({
+  aiReport,
+  onAIReportGenerated,
+  result,
+}: DashboardViewProps) {
   const quality = result.data_quality;
   const metrics = result.metrics;
   const channels = Object.entries(result.channels);
@@ -91,6 +99,16 @@ export function DashboardView({ result }: DashboardViewProps) {
 
   return (
     <div className="dashboard-content">
+      {aiReport ? (
+        <DashboardSection
+          eyebrow="AI growth diagnosis"
+          title="AI 增长诊断"
+          description="汇总当前增长阶段、核心问题与优先行动，帮助快速进入决策。"
+        >
+          <AIGrowthDiagnosis report={aiReport} />
+        </DashboardSection>
+      ) : null}
+
       <DashboardSection
         eyebrow="Data understanding"
         title="AI 数据理解"
@@ -146,6 +164,7 @@ export function DashboardView({ result }: DashboardViewProps) {
 
       <AIReportSection
         analysis={result}
+        onReportGenerated={onAIReportGenerated}
         key={[
           result.metadata.file_name,
           result.data_quality.valid_user_count,

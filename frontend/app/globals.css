@@ -391,6 +391,92 @@ label {
   padding-top: 46px;
 }
 
+.ai-diagnosis-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ai-diagnosis-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 168px;
+  padding: 22px;
+}
+
+.ai-diagnosis-card-summary {
+  background: linear-gradient(135deg, #3559e0 0%, #2846ae 100%);
+  border-color: transparent;
+  color: #fff;
+  grid-column: span 2;
+}
+
+.ai-diagnosis-card-action {
+  background: linear-gradient(135deg, #fff9ee 0%, #fffdf8 100%);
+  border-color: #efdfc1;
+  grid-column: span 2;
+}
+
+.ai-diagnosis-label {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  font-weight: 750;
+  gap: 9px;
+}
+
+.ai-diagnosis-label > span {
+  align-items: center;
+  background: var(--brand-soft);
+  border-radius: 6px;
+  color: var(--brand);
+  display: inline-flex;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  height: 24px;
+  justify-content: center;
+  width: 28px;
+}
+
+.ai-diagnosis-card-summary .ai-diagnosis-label {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ai-diagnosis-card-summary .ai-diagnosis-label > span {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.ai-diagnosis-card > p {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.65;
+  margin: 24px 0 0;
+}
+
+.ai-diagnosis-card-summary > p {
+  font-size: clamp(17px, 1.8vw, 22px);
+  letter-spacing: -0.02em;
+  line-height: 1.55;
+  max-width: 780px;
+}
+
+.ai-diagnosis-meta {
+  align-self: flex-start;
+  background: rgba(201, 138, 40, 0.11);
+  border-radius: 6px;
+  color: #8b5c17;
+  font-size: 10px;
+  font-weight: 700;
+  margin-top: 16px;
+  padding: 5px 8px;
+}
+
 .section-heading {
   align-items: flex-end;
   display: flex;
@@ -1539,6 +1625,15 @@ tbody tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .ai-diagnosis-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-diagnosis-card-summary,
+  .ai-diagnosis-card-action {
+    grid-column: 1 / -1;
+  }
+
   .analysis-context-panel {
     grid-template-columns: 1fr 1fr;
   }
@@ -1671,6 +1766,17 @@ tbody tr:hover {
 
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .ai-diagnosis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-diagnosis-card,
+  .ai-diagnosis-card-summary,
+  .ai-diagnosis-card-action {
+    grid-column: 1;
+    min-height: 0;
   }
 
   .summary-card {

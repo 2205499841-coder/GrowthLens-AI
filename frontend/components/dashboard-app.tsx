@@ -6,9 +6,16 @@ import { DashboardView } from "@/components/dashboard-view";
 import { UploadPanel } from "@/components/upload-panel";
 import { formatDateRange, formatInteger } from "@/lib/formatters";
 import type { GrowthAnalysisResult } from "@/types/analysis";
+import type { AIReport } from "@/types/ai-report";
 
 export function DashboardApp() {
   const [result, setResult] = useState<GrowthAnalysisResult | null>(null);
+  const [aiReport, setAIReport] = useState<AIReport | null>(null);
+
+  function handleAnalyzed(nextResult: GrowthAnalysisResult) {
+    setResult(nextResult);
+    setAIReport(null);
+  }
 
   return (
     <main className="app-shell">
@@ -40,7 +47,7 @@ export function DashboardApp() {
               <UploadPanel
                 compact
                 currentFileName={result.metadata.file_name}
-                onAnalyzed={setResult}
+                onAnalyzed={handleAnalyzed}
               />
             </div>
             <div className="dataset-strip">
@@ -76,12 +83,18 @@ export function DashboardApp() {
                 <span>渠道增长策略</span>
               </div>
             </div>
-            <UploadPanel onAnalyzed={setResult} />
+            <UploadPanel onAnalyzed={handleAnalyzed} />
           </div>
         )}
       </header>
 
-      {result ? <DashboardView result={result} /> : null}
+      {result ? (
+        <DashboardView
+          aiReport={aiReport}
+          onAIReportGenerated={setAIReport}
+          result={result}
+        />
+      ) : null}
 
       <footer className="app-footer">
         <span>GrowthLens AI · AI 增长分析平台</span>
