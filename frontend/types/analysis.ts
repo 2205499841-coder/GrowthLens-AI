@@ -89,8 +89,168 @@ export interface GrowthAnalysisResult {
   channels: Record<string, GrowthMetrics>;
 }
 
+export type AggregateMetricUnit =
+  | "count"
+  | "ratio"
+  | "currency"
+  | "currency_per_order"
+  | "absolute"
+  | "percentage_point";
+
+export interface AggregateKpi {
+  metric_key: string;
+  label: string;
+  value: number;
+  unit: AggregateMetricUnit;
+  aggregation: "sum" | "weighted_rate" | "non_additive";
+  source: "total_row" | "single_row" | "safe_sum" | "derived";
+}
+
+export interface AggregateFunnelStage {
+  metric_key: string;
+  label: string;
+  user_count: number;
+  conversion_rate_from_previous: number | null;
+  dropoff_count: number | null;
+  yoy: number | null;
+  mom: number | null;
+  yoy_unit:
+    | "ratio_change"
+    | "percentage_point"
+    | "absolute_change"
+    | null;
+  mom_unit:
+    | "ratio_change"
+    | "percentage_point"
+    | "absolute_change"
+    | null;
+}
+
+export interface DimensionPerformance {
+  dimension_value: string;
+  traffic_users: number | null;
+  appointment_users: number | null;
+  payment_users: number | null;
+  conversion_rate: number | null;
+  gmv: number | null;
+  average_order_value: number | null;
+  yoy: number | null;
+  mom: number | null;
+  yoy_unit:
+    | "ratio_change"
+    | "percentage_point"
+    | "absolute_change"
+    | null;
+  mom_unit:
+    | "ratio_change"
+    | "percentage_point"
+    | "absolute_change"
+    | null;
+}
+
+export interface AggregateDiagnostic {
+  diagnostic_type:
+    | "high_traffic_low_conversion"
+    | "high_conversion_low_traffic"
+    | "yoy_decline"
+    | "mom_decline"
+    | "funnel_dropoff"
+    | "gmv_payment_mismatch";
+  title: string;
+  evidence: string;
+  severity: "high" | "medium" | "low";
+  dimension_value: string | null;
+  metric_key: string | null;
+}
+
+export interface AggregateOpportunity {
+  opportunity_type:
+    | "scale_high_conversion"
+    | "high_gmv"
+    | "conversion_improvement";
+  title: string;
+  evidence: string;
+  dimension_value: string;
+  metric_key: string;
+}
+
+export interface AggregateAnalysisResult {
+  dataset_type: "aggregate_metrics";
+  analysis_status: "ready" | "partial";
+  metadata: AnalysisMetadata;
+  dataset: {
+    dataset_type: "aggregate_metrics";
+    analysis_status: "ready" | "partial";
+    sheet_name: string;
+    header_rows: number[];
+    grain: string[];
+    report_period: string | null;
+    filters: Record<string, string>;
+  };
+  dimensions: Array<{
+    source_column: string;
+    label: string;
+    semantic_key: string;
+    confidence: "high" | "medium" | "low";
+  }>;
+  metrics: Array<{
+    source_column: string;
+    label: string;
+    metric_key: string;
+    role:
+      | "count_metric"
+      | "rate_metric"
+      | "amount_metric"
+      | "comparison_metric";
+    unit: AggregateMetricUnit;
+    aggregation: "sum" | "weighted_rate" | "non_additive";
+    confidence: "high" | "medium" | "low";
+  }>;
+  funnel_stages: Array<{
+    metric_key: string;
+    label: string;
+    stage_order: number;
+    source_column: string;
+    confidence: "high" | "medium" | "low";
+  }>;
+  comparisons: Array<{
+    source_column: string;
+    label: string;
+    comparison_type:
+      | "yoy"
+      | "mom"
+      | "absolute_change"
+      | "percentage_point_change";
+    period: "yoy" | "mom" | null;
+    unit:
+      | "ratio_change"
+      | "percentage_point"
+      | "absolute_change"
+      | "absolute_value";
+    value_kind: "delta" | "baseline";
+    target_metric_key: string | null;
+    confidence: "high" | "medium" | "low";
+  }>;
+  data_quality: {
+    row_count: number;
+    detail_row_count: number;
+    total_row_detected: boolean;
+    recognized_column_count: number;
+    unrecognized_columns: string[];
+    warnings: string[];
+  };
+  kpis: AggregateKpi[];
+  funnel: {
+    scope_dimension_value: string | null;
+    stages: AggregateFunnelStage[];
+  };
+  dimension_performance: DimensionPerformance[];
+  diagnostics: AggregateDiagnostic[];
+  opportunities: AggregateOpportunity[];
+}
+
 export interface DatasetPlaceholderResult {
-  dataset_type: "aggregate_metrics" | "unsupported";
+  dataset_type: "unsupported";
   analysis_status: "unavailable";
   metadata: AnalysisMetadata;
   message: string;
@@ -105,4 +265,5 @@ export interface DatasetPlaceholderResult {
 
 export type AnalysisResult =
   | GrowthAnalysisResult
+  | AggregateAnalysisResult
   | DatasetPlaceholderResult;

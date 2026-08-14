@@ -1407,6 +1407,105 @@ tbody tr:hover {
   padding-left: 16px;
 }
 
+.aggregate-quality-notice {
+  align-items: center;
+  background: var(--accent-soft);
+  border: 1px solid #f0d9af;
+  border-radius: 12px;
+  display: flex;
+  gap: 16px;
+  margin-top: 30px;
+  padding: 15px 18px;
+}
+
+.aggregate-quality-notice strong {
+  color: #895d1c;
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+
+.aggregate-quality-notice span {
+  color: #846d49;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.aggregate-kpi-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.aggregate-kpi-card {
+  border-top: 3px solid var(--brand);
+}
+
+.aggregate-table-card {
+  margin-top: 0;
+}
+
+.aggregate-signal-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.aggregate-signal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid #d7a44c;
+  border-radius: 13px;
+  min-height: 152px;
+  padding: 20px;
+}
+
+.aggregate-signal-card > span {
+  color: #8a651f;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.aggregate-signal-card h3 {
+  font-size: 15px;
+  line-height: 1.45;
+  margin: 14px 0 0;
+}
+
+.aggregate-signal-card p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 9px 0 0;
+}
+
+.aggregate-signal-card.severity-high {
+  background: #fff8f7;
+  border-left-color: var(--danger);
+}
+
+.aggregate-signal-card.severity-high > span {
+  color: var(--danger);
+}
+
+.aggregate-signal-card.opportunity-card {
+  background: #f7fbfa;
+  border-left-color: var(--success);
+}
+
+.aggregate-signal-card.opportunity-card > span {
+  color: var(--success);
+}
+
+.aggregate-empty-panel {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: 13px;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 26px;
+}
+
 .app-footer {
   align-items: center;
   border-top: 1px solid var(--border);
@@ -1621,6 +1720,12 @@ tbody tr:hover {
 
   .summary-card {
     min-height: 126px;
+  }
+
+  .aggregate-quality-notice {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
   }
 
   .analysis-context-panel {

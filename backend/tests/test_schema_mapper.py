@@ -7,12 +7,14 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 import app.api.uploads as uploads_api
+import app.services.schema_mapper as schema_mapper_service
 from app.main import app
 from app.schemas.schema_mapping import SchemaMappingResponse
 from app.services.excel_parser import REQUIRED_COLUMNS
 from app.services.schema_mapper import (
     DeepSeekSchemaMappingProvider,
     SchemaMappingError,
+    map_aggregate_columns,
     map_columns,
 )
 
@@ -142,6 +144,63 @@ def test_deepseek_schema_mapper_requires_api_key() -> None:
             api_key=None,
             model="deepseek-v4-pro",
         )
+
+
+def test_aggregate_ai_fallback_uses_profiles_and_rejects_hallucinations(
+    monkeypatch,
+) -> None:
+    fake_client = FakeDeepSeekClient(
+        {
+            "fields": [
+                {
+                    "source_column": "访问客户量",
+                    "role": "count_metric",
+                    "semantic_key": "traffic_users",
+                    "confidence": "medium",
+                },
+                {
+                    "source_column": "不存在字段",
+                    "role": "amount_metric",
+                    "semantic_key": "gmv",
+                    "confidence": "high",
+                },
+            ]
+        }
+    )
+    monkeypatch.setattr(
+        schema_mapper_service,
+        "settings",
+        SimpleNamespace(
+            ai_provider="deepseek",
+            deepseek_api_key="test-key",
+            ai_model="deepseek-chat",
+        ),
+    )
+    profiles = [
+        {
+            "source_column": "访问客户量",
+            "inferred_type": "numeric",
+            "numeric_ratio": 1.0,
+            "unique_ratio": 0.8,
+            "percentage_format": False,
+            "value_range": "zero_to_10000",
+        }
+    ]
+
+    result = map_aggregate_columns(profiles, client=fake_client)
+
+    assert result == [
+        {
+            "source_column": "访问客户量",
+            "role": "count_metric",
+            "semantic_key": "traffic_users",
+            "confidence": "medium",
+        }
+    ]
+    request_payload = json.loads(
+        fake_client.calls[0]["messages"][1]["content"]
+    )
+    assert request_payload == {"unresolved_columns": profiles}
 
 
 def test_schema_map_endpoint_selects_detail_sheet(monkeypatch) -> None:

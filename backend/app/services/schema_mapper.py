@@ -68,6 +68,70 @@ SCHEMA_MAPPING_SYSTEM_PROMPT = (
 )
 
 
+AGGREGATE_SEMANTIC_KEYS = {
+    "dimension": {
+        "category",
+        "channel",
+        "region",
+        "user_type",
+        "page_version",
+    },
+    "count_metric": {
+        "traffic_users",
+        "product_detail_users",
+        "lead_users",
+        "appointment_users",
+        "sku_selection_users",
+        "time_confirmation_users",
+        "order_submission_users",
+        "visit_users",
+        "payment_users",
+        "online_payment_users",
+        "store_payment_users",
+    },
+    "rate_metric": {
+        "traffic_to_detail_rate",
+        "detail_to_appointment_rate",
+        "appointment_to_sku_rate",
+        "sku_to_time_confirmation_rate",
+        "time_confirmation_to_order_rate",
+        "order_to_payment_rate",
+        "payment_conversion_rate",
+    },
+    "amount_metric": {
+        "gmv",
+        "average_order_value",
+    },
+}
+
+
+AGGREGATE_SCHEMA_SYSTEM_PROMPT = f"""你是 GrowthLens AI 的聚合经营报表字段识别器。
+
+规则引擎已经处理了语义明确的字段。你只需要判断剩余的低确定性字段，
+并且只能使用以下语义目录：
+{json.dumps({key: sorted(value) for key, value in AGGREGATE_SEMANTIC_KEYS.items()}, ensure_ascii=False, indent=2)}
+
+只输出合法 JSON：
+{{
+  "fields": [
+    {{
+      "source_column": "输入中逐字存在的字段名",
+      "role": "dimension | count_metric | rate_metric | amount_metric",
+      "semantic_key": "目录中的语义 Key",
+      "confidence": "high | medium | low"
+    }}
+  ]
+}}
+
+约束：
+1. source_column 只能逐字引用输入中的字段名，不得创造字段。
+2. 无法可靠判断的字段不要返回，不能强制映射。
+3. 同一字段最多映射一次。
+4. 只能依据字段名、数据类型、百分比格式、唯一值比例和值范围分桶判断。
+5. 不输出 Markdown、解释或 JSON 之外的内容。
+"""
+
+
 class SchemaMappingError(RuntimeError):
     """Raised when semantic schema mapping cannot be completed."""
 
@@ -177,6 +241,55 @@ def map_columns(
     active_provider = provider or get_schema_mapping_provider()
     raw_result = active_provider.map_columns(normalized_columns)
     return _validate_mapping_result(raw_result, normalized_columns)
+
+
+def map_aggregate_columns(
+    column_profiles: list[dict[str, Any]],
+    *,
+    client: Any | None = None,
+) -> list[dict[str, str]]:
+    """Use DeepSeek only as a non-blocking fallback for unresolved headers.
+
+    The payload intentionally contains header names and coarse statistical
+    profiles only. Row values and complete business data never leave the
+    analysis service.
+    """
+    profiles = _normalize_aggregate_profiles(column_profiles)
+    if not profiles:
+        return []
+    if settings.ai_provider != "deepseek" or not settings.deepseek_api_key:
+        return []
+
+    active_client = client or _create_deepseek_client(
+        settings.deepseek_api_key
+    )
+    try:
+        completion = active_client.chat.completions.create(
+            model=settings.ai_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": AGGREGATE_SCHEMA_SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {"unresolved_columns": profiles},
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            response_format={"type": "json_object"},
+            max_tokens=1000,
+            stream=False,
+        )
+        content = completion.choices[0].message.content
+        payload = json.loads(content) if content else {}
+    except Exception as exc:
+        logger.exception("聚合字段 DeepSeek 兜底请求失败：%r", exc)
+        return []
+
+    return _validate_aggregate_mapping_payload(payload, profiles)
 
 
 def build_ai_mapped_excel(
@@ -469,3 +582,98 @@ def _empty_mapping_response(columns: list[str]) -> SchemaMappingResponse:
         confidence={field: None for field in REQUIRED_COLUMNS},
         unmapped_columns=columns,
     )
+
+
+def _normalize_aggregate_profiles(
+    column_profiles: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    seen_columns: set[str] = set()
+    allowed_types = {"numeric", "text"}
+    allowed_ranges = {
+        "not_numeric",
+        "minus_1_to_1",
+        "zero_to_100",
+        "zero_to_10000",
+        "wide_range",
+    }
+    for profile in column_profiles:
+        source_column = str(profile.get("source_column", "")).strip()
+        if not source_column or source_column in seen_columns:
+            continue
+        inferred_type = str(profile.get("inferred_type", "text"))
+        value_range = str(profile.get("value_range", "not_numeric"))
+        normalized.append(
+            {
+                "source_column": source_column,
+                "inferred_type": (
+                    inferred_type
+                    if inferred_type in allowed_types
+                    else "text"
+                ),
+                "numeric_ratio": _bounded_ratio(
+                    profile.get("numeric_ratio")
+                ),
+                "unique_ratio": _bounded_ratio(
+                    profile.get("unique_ratio")
+                ),
+                "percentage_format": bool(
+                    profile.get("percentage_format", False)
+                ),
+                "value_range": (
+                    value_range
+                    if value_range in allowed_ranges
+                    else "not_numeric"
+                ),
+            }
+        )
+        seen_columns.add(source_column)
+    return normalized
+
+
+def _validate_aggregate_mapping_payload(
+    payload: Any,
+    profiles: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    if not isinstance(payload, dict) or not isinstance(
+        payload.get("fields"), list
+    ):
+        return []
+    allowed_sources = {
+        profile["source_column"] for profile in profiles
+    }
+    used_sources: set[str] = set()
+    results: list[dict[str, str]] = []
+    for field in payload["fields"]:
+        if not isinstance(field, dict):
+            continue
+        source_column = field.get("source_column")
+        role = field.get("role")
+        semantic_key = field.get("semantic_key")
+        confidence = field.get("confidence")
+        if (
+            source_column not in allowed_sources
+            or source_column in used_sources
+            or role not in AGGREGATE_SEMANTIC_KEYS
+            or semantic_key not in AGGREGATE_SEMANTIC_KEYS[role]
+            or confidence not in {"high", "medium", "low"}
+        ):
+            continue
+        results.append(
+            {
+                "source_column": source_column,
+                "role": role,
+                "semantic_key": semantic_key,
+                "confidence": confidence,
+            }
+        )
+        used_sources.add(source_column)
+    return results
+
+
+def _bounded_ratio(value: Any) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return round(min(max(numeric, 0.0), 1.0), 2)

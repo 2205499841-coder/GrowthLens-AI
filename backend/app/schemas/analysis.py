@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.aggregate_analysis import AggregateAnalysisResponse
 from app.schemas.analysis_context import AnalysisContext
 from app.schemas.ingestion import DataIngestionSummary
 
@@ -83,7 +84,7 @@ class GrowthAnalysisResponse(BaseModel):
 
 
 class DatasetPlaceholderResponse(BaseModel):
-    dataset_type: Literal["aggregate_metrics", "unsupported"]
+    dataset_type: Literal["unsupported"]
     analysis_status: Literal["unavailable"] = "unavailable"
     metadata: AnalysisMetadata
     message: str
@@ -96,4 +97,8 @@ class DatasetPlaceholderResponse(BaseModel):
     channels: None = None
 
 
-AnalysisResponse = GrowthAnalysisResponse | DatasetPlaceholderResponse
+AnalysisResponse = (
+    GrowthAnalysisResponse
+    | AggregateAnalysisResponse
+    | DatasetPlaceholderResponse
+)

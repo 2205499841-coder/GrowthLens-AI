@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { AggregateDashboard } from "@/components/aggregate-dashboard";
 import { DashboardView } from "@/components/dashboard-view";
 import { UploadPanel } from "@/components/upload-panel";
 import { formatDateRange, formatInteger } from "@/lib/formatters";
@@ -35,11 +36,15 @@ export function DashboardApp() {
                 <h1>
                   {result.dataset_type === "user_level"
                     ? "业务增长分析全景"
+                    : result.dataset_type === "aggregate_metrics"
+                      ? "聚合经营分析"
                     : "业务数据识别结果"}
                 </h1>
                 <p>
                   {result.dataset_type === "user_level"
                     ? "整合数据质量、核心指标、转化漏斗与渠道表现，快速识别关键增长机会。"
+                    : result.dataset_type === "aggregate_metrics"
+                      ? "从经营报表中识别业务维度、核心指标、动态漏斗与趋势异常。"
                     : "GrowthLens 已完成文件结构判断，并保留当前可用的数据状态。"}
                 </p>
               </div>
@@ -78,6 +83,21 @@ export function DashboardApp() {
                     value={`${formatInteger(result.data_quality.valid_user_count)} 人`}
                   />
                 </>
+              ) : result.dataset_type === "aggregate_metrics" ? (
+                <>
+                  <DatasetItem
+                    label="报表周期"
+                    value={result.dataset.report_period ?? "未提供"}
+                  />
+                  <DatasetItem
+                    label="分析状态"
+                    value={
+                      result.analysis_status === "ready"
+                        ? "分析已就绪"
+                        : "部分结果可用"
+                    }
+                  />
+                </>
               ) : (
                 <DatasetItem label="分析可用性" value="当前不可用" />
               )}
@@ -104,6 +124,8 @@ export function DashboardApp() {
 
       {result?.dataset_type === "user_level" ? (
         <DashboardView result={result} />
+      ) : result?.dataset_type === "aggregate_metrics" ? (
+        <AggregateDashboard result={result} />
       ) : result ? (
         <DatasetPlaceholder result={result} />
       ) : null}
@@ -134,19 +156,13 @@ function DatasetItem({
 function DatasetPlaceholder({
   result,
 }: {
-  result: Exclude<AnalysisResult, { dataset_type: "user_level" }>;
+  result: Extract<AnalysisResult, { dataset_type: "unsupported" }>;
 }) {
-  const isAggregate = result.dataset_type === "aggregate_metrics";
-
   return (
     <div className="dashboard-content">
       <section className="dataset-placeholder">
-        <span>{isAggregate ? "聚合经营指标报表" : "数据结构待确认"}</span>
-        <h2>
-          {isAggregate
-            ? "已完成报表类型识别"
-            : "暂时无法生成可靠分析"}
-        </h2>
+        <span>数据结构待确认</span>
+        <h2>暂时无法生成可靠分析</h2>
         <p>{result.message}</p>
         <small>
           未识别或尚不可计算的指标不会以 0 代替。

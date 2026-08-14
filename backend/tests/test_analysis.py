@@ -259,7 +259,7 @@ def test_ai_unrecognized_fields_returns_structured_error(monkeypatch) -> None:
     assert payload["channels"] is None
 
 
-def test_aggregate_metrics_enters_placeholder_analysis(monkeypatch) -> None:
+def test_aggregate_metrics_enters_ready_analysis(monkeypatch) -> None:
     def fail_if_ai_mapping_is_called(_columns):
         raise AssertionError("聚合指标报表不应进入用户字段映射")
 
@@ -301,9 +301,11 @@ def test_aggregate_metrics_enters_placeholder_analysis(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["dataset_type"] == "aggregate_metrics"
-    assert payload["analysis_status"] == "unavailable"
-    assert payload["metrics"] is None
-    assert payload["data_quality"] is None
+    assert payload["analysis_status"] == "ready"
+    assert payload["dataset"]["grain"] == ["category"]
+    assert payload["data_quality"]["detail_row_count"] == 1
+    assert payload["funnel"]["stages"][0]["metric_key"] == "traffic_users"
+    assert payload["dimension_performance"][0]["dimension_value"] == "品类A"
 
 
 def test_unsupported_workbook_returns_unavailable_structure(monkeypatch) -> None:

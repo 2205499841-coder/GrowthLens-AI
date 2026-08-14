@@ -9,6 +9,7 @@ from app.schemas.analysis import (
     GrowthAnalysisResponse,
 )
 from app.schemas.analysis_context import DatasetType
+from app.services.aggregate_analyzer import analyze_aggregate_excel
 from app.schemas.ingestion import ExcelIngestionErrorResponse
 from app.services.analysis_classifier import (
     classify_analysis_context,
@@ -66,7 +67,13 @@ async def analyze_growth_excel(
                 dataset_type = classify_dataset_type(
                     extracted_schema.columns
                 )
-                if dataset_type != "user_level":
+                if dataset_type == "aggregate_metrics":
+                    return analyze_aggregate_excel(
+                        file_content,
+                        file_name=file_name,
+                        extracted_schema=extracted_schema,
+                    )
+                if dataset_type == "unsupported":
                     return _build_placeholder_response(
                         file_name=file_name,
                         dataset_type=dataset_type,
@@ -137,16 +144,12 @@ def _build_placeholder_response(
     file_name: str,
     dataset_type: DatasetType,
 ) -> DatasetPlaceholderResponse:
-    if dataset_type == "aggregate_metrics":
-        message = (
-            "已识别为聚合经营指标报表。当前已完成数据类型识别，"
-            "完整经营分析能力将在后续分析流程中提供。"
-        )
-    else:
-        message = (
-            "当前文件暂无法形成可靠分析，请检查是否包含清晰的"
-            "业务维度、经营指标或用户行为字段。"
-        )
+    if dataset_type != "unsupported":
+        raise ValueError("占位响应仅适用于 unsupported 数据类型。")
+    message = (
+        "当前文件暂无法形成可靠分析，请检查是否包含清晰的"
+        "业务维度、经营指标或用户行为字段。"
+    )
 
     return DatasetPlaceholderResponse(
         dataset_type=dataset_type,
