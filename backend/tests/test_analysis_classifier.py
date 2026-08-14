@@ -7,6 +7,7 @@ from app.services.analysis_classifier import (
     DEFAULT_ANALYSIS_CONTEXT,
     DeepSeekAnalysisClassifierProvider,
     classify_analysis_context,
+    classify_dataset_type,
 )
 
 
@@ -29,6 +30,33 @@ class StaticProvider:
     def classify(self, schema_mapping, columns):
         self.calls.append((schema_mapping, columns))
         return self.payload
+
+
+@pytest.mark.parametrize(
+    ("columns", "expected"),
+    [
+        (
+            ["用户ID", "渠道", "注册时间", "支付时间"],
+            "user_level",
+        ),
+        (
+            [
+                "品类",
+                "浏览用户数",
+                "预约用户数",
+                "支付转化率",
+                "环比偏差",
+            ],
+            "aggregate_metrics",
+        ),
+        (["说明", "备注"], "unsupported"),
+    ],
+)
+def test_dataset_type_classifier_supports_foundation_routes(
+    columns,
+    expected,
+) -> None:
+    assert classify_dataset_type(columns) == expected
 
 
 @pytest.mark.parametrize(

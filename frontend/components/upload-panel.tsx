@@ -3,16 +3,17 @@
 import { ChangeEvent, FormEvent, useState } from "react";
 
 import { analyzeGrowth } from "@/lib/api";
-import type { GrowthAnalysisResult } from "@/types/analysis";
+import type { AnalysisResult } from "@/types/analysis";
 
 const ACCEPTED_FILE_EXTENSION = ".xlsx";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const DATA_TEMPLATE_PATH = "/sample_data/portrait_growth_demo.xlsx";
+const DATA_TEMPLATE_PATH =
+  "/sample_data/growthlens_synthetic_user_growth.xlsx";
 
 interface UploadPanelProps {
   compact?: boolean;
   currentFileName?: string;
-  onAnalyzed: (result: GrowthAnalysisResult) => void;
+  onAnalyzed: (result: AnalysisResult) => void;
 }
 
 export function UploadPanel({
@@ -121,9 +122,12 @@ export function UploadPanel({
 
       {!compact ? (
         <p className="upload-hint">
-          数据模板：
-          <a download="growth_analysis_template.xlsx" href={DATA_TEMPLATE_PATH}>
-            下载标准 Excel 模板
+          示例数据：
+          <a
+            download="growthlens_synthetic_user_growth.xlsx"
+            href={DATA_TEMPLATE_PATH}
+          >
+            下载通用脱敏示例报表
           </a>
           <span> · 支持 .xlsx · 最大 10 MB</span>
         </p>

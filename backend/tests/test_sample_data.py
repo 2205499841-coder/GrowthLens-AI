@@ -11,7 +11,7 @@ CORE_CHANNELS = ("小红书", "抖音", "微信", "自然流量")
 SAMPLE_FILE = (
     Path(__file__).resolve().parents[2]
     / "sample_data"
-    / "portrait_growth_demo.xlsx"
+    / "growthlens_synthetic_user_growth.xlsx"
 )
 
 

@@ -1,8 +1,8 @@
 # GrowthLens AI
 
-面向写真行业增长运营场景的 AI 产品经理作品集 Demo。
+面向增长运营与产品运营人员的 AI 数据诊断助手。
 
-AI user growth analysis assistant for lifestyle service businesses.
+读取业务平台导出的 Excel 报表，识别数据结构并生成可追溯的增长分析。
 
 当前开发范围仅包含：
 
@@ -31,7 +31,7 @@ growthlens-ai/
 │   │   ├── schemas/
 │   │   └── services/
 │   └── tests/
-├── sample_data/           # 写真行业演示数据
+├── sample_data/           # 通用脱敏示例数据
 └── docs/                  # 字段模板与接口说明
 ```
 
@@ -45,7 +45,8 @@ growthlens-ai/
 - Step 6：结构化 AI 增长报告（默认使用 DeepSeek Provider）；
 - AI 问答尚未实现。
 
-写真行业演示数据位于 `sample_data/portrait_growth_demo.xlsx`，可通过
+通用脱敏示例数据位于
+`sample_data/growthlens_synthetic_user_growth.xlsx`，可通过
 `sample_data/generate_sample_data.py` 使用固定随机种子重新生成。
 
 ## 部署

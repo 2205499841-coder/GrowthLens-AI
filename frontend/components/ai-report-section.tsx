@@ -8,7 +8,6 @@ import type { AIReport, ExpectedDirection } from "@/types/ai-report";
 
 interface AIReportSectionProps {
   analysis: GrowthAnalysisResult;
-  onReportGenerated?: (report: AIReport) => void;
 }
 
 const DIRECTION_LABELS: Record<ExpectedDirection, string> = {
@@ -19,7 +18,6 @@ const DIRECTION_LABELS: Record<ExpectedDirection, string> = {
 
 export function AIReportSection({
   analysis,
-  onReportGenerated,
 }: AIReportSectionProps) {
   const [report, setReport] = useState<AIReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,12 +30,11 @@ export function AIReportSection({
     try {
       const nextReport = await generateAIReport(analysis);
       setReport(nextReport);
-      onReportGenerated?.(nextReport);
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "AI 增长报告生成失败，请稍后重试。",
+          : "AI 增长诊断生成失败，请稍后重试。",
       );
     } finally {
       setIsLoading(false);
@@ -48,15 +45,12 @@ export function AIReportSection({
     <section className="dashboard-section ai-report-section">
       <div className="section-heading ai-section-heading">
         <div>
-          <div className="ai-kicker-row">
-            <p className="section-kicker">AI growth intelligence</p>
-            <span className="provider-badge">AI 智能诊断</span>
-          </div>
-          <h2>AI 增长策略报告</h2>
+          <p className="section-kicker">AI growth diagnosis</p>
+          <h2>AI 增长诊断</h2>
         </div>
         <div className="ai-heading-actions">
           <p>
-            基于业务指标、转化漏斗与渠道表现，生成增长诊断和可执行策略。
+            基于业务指标、转化漏斗与渠道表现，生成问题、证据与优先建议。
           </p>
           <button
             className="ai-generate-button"
@@ -65,10 +59,10 @@ export function AIReportSection({
             type="button"
           >
             {isLoading
-              ? "正在生成策略…"
+              ? "正在生成诊断…"
               : report
-                ? "更新增长策略"
-                : "生成增长策略"}
+                ? "更新增长诊断"
+                : "生成增长诊断"}
           </button>
         </div>
       </div>
@@ -97,15 +91,15 @@ function AIReportPlaceholder({ isLoading }: { isLoading: boolean }) {
       <div className="ai-placeholder-mark">AI</div>
       <div>
         <h3>
-          {isLoading ? "正在研判增长机会" : "生成面向决策的增长诊断"}
+          {isLoading ? "正在研判增长机会" : "获取面向决策的增长诊断"}
         </h3>
         <p>
           {isLoading
-            ? "正在结合分析类型、字段语义、漏斗与渠道表现组织业务诊断。"
-            : "报告将包含整体诊断、关键问题、渠道策略和可执行增长建议。"}
+            ? "正在结合核心指标、漏斗与渠道表现组织业务诊断。"
+            : "诊断将聚焦核心结论、关键问题、数据证据和优先行动。"}
         </p>
       </div>
-      <span>业务诊断 · 行动建议</span>
+      <span>问题 · 证据 · 建议</span>
     </div>
   );
 }
@@ -114,22 +108,22 @@ function AIReportContent({ report }: { report: AIReport }) {
   return (
     <div className="ai-report-panel">
       <div className="ai-summary">
-        <span>增长诊断摘要</span>
+        <span>核心结论</span>
         <p>{report.summary}</p>
       </div>
 
       <div className="ai-report-block">
         <ReportBlockHeading
           index="01"
-          title="关键增长发现"
-          description="聚焦问题、数据证据与优化方向"
+          title="重点问题"
+          description="聚焦问题、数据证据与影响方向"
         />
         <div className="insight-grid">
           {report.key_findings.map((finding, index) => (
             <article className="insight-card" key={`${finding.issue}-${index}`}>
               <div className="insight-card-header">
                 <span className="finding-badge">
-                  诊断 {String(index + 1).padStart(2, "0")}
+                  问题 {String(index + 1).padStart(2, "0")}
                 </span>
                 <span className="insight-icon">↗</span>
               </div>
@@ -139,7 +133,7 @@ function AIReportContent({ report }: { report: AIReport }) {
                 <p>{finding.evidence}</p>
               </div>
               <div className="insight-detail interpretation">
-                <span>优化建议</span>
+                <span>建议方向</span>
                 <p>{finding.recommendation}</p>
               </div>
             </article>
@@ -151,8 +145,8 @@ function AIReportContent({ report }: { report: AIReport }) {
         <div className="ai-report-block">
           <ReportBlockHeading
             index="02"
-            title="渠道策略"
-            description="根据规模、转化和收入表现差异化诊断"
+            title="渠道机会"
+            description="识别规模、转化和收入表现中的机会"
           />
           <div className="opportunity-list">
             {report.channel_strategy.map((item) => (
@@ -171,8 +165,8 @@ function AIReportContent({ report }: { report: AIReport }) {
         <div className="ai-report-block">
           <ReportBlockHeading
             index="03"
-            title="优先行动计划"
-            description="明确目标指标与预期改善方向"
+            title="优先优化建议"
+            description="明确建议动作与预期改善方向"
           />
           <ol className="action-list">
             {report.growth_actions.map((item, index) => (

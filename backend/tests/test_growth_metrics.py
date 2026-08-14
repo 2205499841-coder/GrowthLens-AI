@@ -93,12 +93,15 @@ def test_build_available_funnel_when_optional_time_fields_are_missing() -> None:
 
     assert analysis["metrics"]["user_counts"] == {
         "registered_users": 2,
-        "viewed_users": 0,
-        "lead_users": 0,
+        "viewed_users": None,
+        "lead_users": None,
         "appointment_users": 1,
-        "visit_users": 0,
+        "visit_users": None,
         "paid_users": 1,
     }
+    assert analysis["metrics"]["conversion_rates"]["view_rate"] is None
+    assert analysis["metrics"]["conversion_rates"]["lead_rate"] is None
+    assert analysis["metrics"]["conversion_rates"]["visit_rate"] is None
     assert analysis["metrics"]["conversion_rates"]["appointment_rate"] == 0.5
     assert analysis["metrics"]["conversion_rates"]["paid_rate"] == 1.0
     assert analysis["metrics"]["revenue"] == {

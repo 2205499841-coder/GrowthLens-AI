@@ -21,7 +21,7 @@ client = TestClient(app)
 SAMPLE_FILE = (
     Path(__file__).resolve().parents[2]
     / "sample_data"
-    / "portrait_growth_demo.xlsx"
+    / "growthlens_synthetic_user_growth.xlsx"
 )
 
 
@@ -59,6 +59,8 @@ def test_analyze_growth_excel_returns_unified_structure(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert set(payload) == {
+        "dataset_type",
+        "analysis_status",
         "metadata",
         "data_ingestion",
         "schema_mapping",
@@ -68,6 +70,8 @@ def test_analyze_growth_excel_returns_unified_structure(monkeypatch) -> None:
         "funnel",
         "channels",
     }
+    assert payload["dataset_type"] == "user_level"
+    assert payload["analysis_status"] == "ready"
     assert payload["metadata"] == {
         "file_name": "growth.xlsx",
         "data_start_date": "2026-06-01",
@@ -94,9 +98,9 @@ def test_analyze_growth_excel_returns_unified_structure(monkeypatch) -> None:
     assert set(payload["channels"]) == {"小红书", "微信", "自然流量"}
 
 
-def test_portrait_demo_keeps_fixed_mapping_path(monkeypatch) -> None:
+def test_synthetic_example_keeps_fixed_mapping_path(monkeypatch) -> None:
     def fail_if_ai_mapping_is_called(_columns):
-        raise AssertionError("演示文件不应调用 AI 字段识别")
+        raise AssertionError("脱敏示例文件不应调用 AI 字段识别")
 
     monkeypatch.setattr(
         analysis_api,
@@ -184,6 +188,11 @@ def test_ai_mapping_cannot_reference_nonexistent_column(monkeypatch) -> None:
             unmapped_columns=[],
         ),
     )
+    monkeypatch.setattr(
+        analysis_api,
+        "classify_dataset_type",
+        lambda _columns: "user_level",
+    )
     response = client.post(
         "/api/analysis/growth",
         files={
@@ -241,16 +250,95 @@ def test_ai_unrecognized_fields_returns_structured_error(monkeypatch) -> None:
         },
     )
 
-    assert response.status_code == 422
-    assert response.json() == {
-        "error": "AI字段映射不完整",
-        "message": "AI 未能识别全部用户增长分析核心字段。",
-        "missing_fields": list(CORE_REQUIRED_COLUMNS),
-        "detected_sheet_names": ["用户明细"],
-        "candidate_sheet_name": "用户明细",
-        "recognized_field_count": 0,
-        "data_quality_status": "invalid",
-    }
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dataset_type"] == "unsupported"
+    assert payload["analysis_status"] == "unavailable"
+    assert payload["metrics"] is None
+    assert payload["funnel"] is None
+    assert payload["channels"] is None
+
+
+def test_aggregate_metrics_enters_placeholder_analysis(monkeypatch) -> None:
+    def fail_if_ai_mapping_is_called(_columns):
+        raise AssertionError("聚合指标报表不应进入用户字段映射")
+
+    monkeypatch.setattr(
+        analysis_api,
+        "map_columns",
+        fail_if_ai_mapping_is_called,
+    )
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "月度经营转化"
+    worksheet.append(
+        [
+            "品类",
+            "浏览用户数",
+            "商详用户数",
+            "预约用户数",
+            "支付用户数",
+            "支付转化率",
+            "同比偏差",
+            "环比偏差",
+        ]
+    )
+    worksheet.append(["品类A", 1200, 860, 320, 126, 0.105, -0.01, 0.008])
+    file_buffer = BytesIO()
+    workbook.save(file_buffer)
+
+    response = client.post(
+        "/api/analysis/growth",
+        files={
+            "file": (
+                "monthly_metrics.xlsx",
+                file_buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dataset_type"] == "aggregate_metrics"
+    assert payload["analysis_status"] == "unavailable"
+    assert payload["metrics"] is None
+    assert payload["data_quality"] is None
+
+
+def test_unsupported_workbook_returns_unavailable_structure(monkeypatch) -> None:
+    def fail_if_ai_mapping_is_called(_columns):
+        raise AssertionError("不支持的数据结构不应调用用户字段映射")
+
+    monkeypatch.setattr(
+        analysis_api,
+        "map_columns",
+        fail_if_ai_mapping_is_called,
+    )
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "说明"
+    worksheet.append(["说明", "备注"])
+    worksheet.append(["口径说明", "暂无结构化指标"])
+    file_buffer = BytesIO()
+    workbook.save(file_buffer)
+
+    response = client.post(
+        "/api/analysis/growth",
+        files={
+            "file": (
+                "notes.xlsx",
+                file_buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dataset_type"] == "unsupported"
+    assert payload["analysis_status"] == "unavailable"
+    assert payload["metrics"] is None
 
 
 def test_core_only_fixed_template_generates_available_funnel(

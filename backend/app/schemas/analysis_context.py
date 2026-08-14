@@ -8,6 +8,11 @@ AnalysisType = Literal[
     "ecommerce_conversion",
     "content_growth",
 ]
+DatasetType = Literal[
+    "aggregate_metrics",
+    "user_level",
+    "unsupported",
+]
 BusinessType = Literal[
     "general",
     "local_service",

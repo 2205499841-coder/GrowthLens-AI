@@ -152,7 +152,7 @@ def test_schema_map_endpoint_selects_detail_sheet(monkeypatch) -> None:
     overview.append(["注册用户", 100])
 
     detail = workbook.create_sheet("客户明细")
-    detail.append(["摄影小程序客户数据"])
+    detail.append(["业务系统客户数据"])
     detail.append(["客户编号", "来源渠道", "首次访问", "成交金额"])
     detail.append(["U001", "小红书", "2026-08-01", 1299])
 

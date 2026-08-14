@@ -5,16 +5,13 @@ import { useState } from "react";
 import { DashboardView } from "@/components/dashboard-view";
 import { UploadPanel } from "@/components/upload-panel";
 import { formatDateRange, formatInteger } from "@/lib/formatters";
-import type { GrowthAnalysisResult } from "@/types/analysis";
-import type { AIReport } from "@/types/ai-report";
+import type { AnalysisResult } from "@/types/analysis";
 
 export function DashboardApp() {
-  const [result, setResult] = useState<GrowthAnalysisResult | null>(null);
-  const [aiReport, setAIReport] = useState<AIReport | null>(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
 
-  function handleAnalyzed(nextResult: GrowthAnalysisResult) {
+  function handleAnalyzed(nextResult: AnalysisResult) {
     setResult(nextResult);
-    setAIReport(null);
   }
 
   return (
@@ -28,10 +25,6 @@ export function DashboardApp() {
               <span>AI 业务增长分析平台</span>
             </div>
           </div>
-          <div className="header-status">
-            <span className="status-dot" />
-            智能分析服务已就绪
-          </div>
         </div>
 
         {result ? (
@@ -39,9 +32,15 @@ export function DashboardApp() {
             <div className="analysis-heading">
               <div>
                 <p className="section-kicker">Growth intelligence dashboard</p>
-                <h1>业务增长分析全景</h1>
+                <h1>
+                  {result.dataset_type === "user_level"
+                    ? "业务增长分析全景"
+                    : "业务数据识别结果"}
+                </h1>
                 <p>
-                  整合数据质量、核心指标、转化漏斗与渠道表现，快速识别关键增长机会。
+                  {result.dataset_type === "user_level"
+                    ? "整合数据质量、核心指标、转化漏斗与渠道表现，快速识别关键增长机会。"
+                    : "GrowthLens 已完成文件结构判断，并保留当前可用的数据状态。"}
                 </p>
               </div>
               <UploadPanel
@@ -56,17 +55,32 @@ export function DashboardApp() {
                 value={result.metadata.file_name}
               />
               <DatasetItem
-                label="数据覆盖时间"
-                value={formatDateRange(
-                  result.metadata.data_start_date,
-                  result.metadata.data_end_date,
-                )}
+                label="数据类型"
+                value={
+                  result.dataset_type === "user_level"
+                    ? "用户级行为明细"
+                    : result.dataset_type === "aggregate_metrics"
+                      ? "聚合经营指标报表"
+                      : "暂不支持的数据结构"
+                }
               />
-              <DatasetItem
-                label="有效用户"
-                value={`${formatInteger(result.data_quality.valid_user_count)} 人`}
-              />
-              <DatasetItem label="分析状态" value="洞察已就绪" status />
+              {result.dataset_type === "user_level" ? (
+                <>
+                  <DatasetItem
+                    label="数据覆盖时间"
+                    value={formatDateRange(
+                      result.metadata.data_start_date,
+                      result.metadata.data_end_date,
+                    )}
+                  />
+                  <DatasetItem
+                    label="有效用户"
+                    value={`${formatInteger(result.data_quality.valid_user_count)} 人`}
+                  />
+                </>
+              ) : (
+                <DatasetItem label="分析可用性" value="当前不可用" />
+              )}
             </div>
           </>
         ) : (
@@ -88,12 +102,10 @@ export function DashboardApp() {
         )}
       </header>
 
-      {result ? (
-        <DashboardView
-          aiReport={aiReport}
-          onAIReportGenerated={setAIReport}
-          result={result}
-        />
+      {result?.dataset_type === "user_level" ? (
+        <DashboardView result={result} />
+      ) : result ? (
+        <DatasetPlaceholder result={result} />
       ) : null}
 
       <footer className="app-footer">
@@ -106,20 +118,40 @@ export function DashboardApp() {
 
 function DatasetItem({
   label,
-  status = false,
   value,
 }: {
   label: string;
-  status?: boolean;
   value: string;
 }) {
   return (
     <div className="dataset-item">
       <span>{label}</span>
-      <strong className={status ? "dataset-status" : undefined}>
-        {status ? <span className="status-dot" /> : null}
-        {value}
-      </strong>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function DatasetPlaceholder({
+  result,
+}: {
+  result: Exclude<AnalysisResult, { dataset_type: "user_level" }>;
+}) {
+  const isAggregate = result.dataset_type === "aggregate_metrics";
+
+  return (
+    <div className="dashboard-content">
+      <section className="dataset-placeholder">
+        <span>{isAggregate ? "聚合经营指标报表" : "数据结构待确认"}</span>
+        <h2>
+          {isAggregate
+            ? "已完成报表类型识别"
+            : "暂时无法生成可靠分析"}
+        </h2>
+        <p>{result.message}</p>
+        <small>
+          未识别或尚不可计算的指标不会以 0 代替。
+        </small>
+      </section>
     </div>
   );
 }

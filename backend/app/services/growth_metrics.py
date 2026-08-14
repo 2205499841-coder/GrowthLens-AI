@@ -84,10 +84,16 @@ def calculate_metrics(
 ) -> dict[str, Any]:
     resolved_fields = available_fields or frozenset(data_frame.columns)
     stage_masks = _build_stage_masks(data_frame, resolved_fields)
-    user_counts = {
-        stage_key: int(stage_masks[stage_key].sum())
-        for stage_key, _, _ in FUNNEL_STAGES
-    }
+    user_counts: dict[str, int | None] = {}
+    for stage_key, _, timestamp_column in FUNNEL_STAGES:
+        if _stage_is_available(
+            stage_key,
+            timestamp_column,
+            resolved_fields,
+        ):
+            user_counts[stage_key] = int(stage_masks[stage_key].sum())
+        else:
+            user_counts[stage_key] = None
     conversion_rates = _build_conversion_rates(
         user_counts,
         resolved_fields,
@@ -124,6 +130,8 @@ def build_funnel(
         if not _stage_is_available(stage_key, timestamp_column, resolved_fields):
             continue
         current_count = counts[stage_key]
+        if current_count is None:
+            continue
         if previous_count is None:
             conversion_rate = 1.0 if current_count else 0.0
             dropoff_count = 0
@@ -203,9 +211,9 @@ def _build_stage_masks(
 
 
 def _build_conversion_rates(
-    user_counts: dict[str, int],
+    user_counts: dict[str, int | None],
     available_fields: frozenset[str],
-) -> dict[str, float]:
+) -> dict[str, float | None]:
     rate_keys = {
         "viewed_users": "view_rate",
         "lead_users": "lead_rate",
@@ -213,7 +221,9 @@ def _build_conversion_rates(
         "visit_users": "visit_rate",
         "paid_users": "paid_rate",
     }
-    conversion_rates = {rate_key: 0.0 for rate_key in rate_keys.values()}
+    conversion_rates: dict[str, float | None] = {
+        rate_key: None for rate_key in rate_keys.values()
+    }
     previous_stage_key = "registered_users"
 
     for stage_key, _, timestamp_column in FUNNEL_STAGES[1:]:
@@ -223,9 +233,13 @@ def _build_conversion_rates(
             available_fields,
         ):
             continue
+        current_count = user_counts[stage_key]
+        previous_count = user_counts[previous_stage_key]
+        if current_count is None or previous_count is None:
+            continue
         conversion_rates[rate_keys[stage_key]] = _safe_rate(
-            user_counts[stage_key],
-            user_counts[previous_stage_key],
+            current_count,
+            previous_count,
         )
         previous_stage_key = stage_key
 

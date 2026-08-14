@@ -24,6 +24,18 @@ backend/.env.*
 # Temporary uploads
 backend/tmp/
 
+# Private or local business data
+outputs/
+local_data/
+private_data/
+sample_data/private/
+*.local.xlsx
+*.private.xlsx
+*.local.xls
+*.private.xls
+*.local.csv
+*.private.csv
+
 # General Python
 # Byte-compiled / optimized / DLL files
 __pycache__/

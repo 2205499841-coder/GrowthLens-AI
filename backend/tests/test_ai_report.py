@@ -24,7 +24,7 @@ from app.services.growth_metrics import build_growth_analysis
 SAMPLE_FILE = (
     Path(__file__).resolve().parents[2]
     / "sample_data"
-    / "portrait_growth_demo.xlsx"
+    / "growthlens_synthetic_user_growth.xlsx"
 )
 client = TestClient(app)
 

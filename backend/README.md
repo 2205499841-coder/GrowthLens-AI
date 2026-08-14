@@ -40,12 +40,14 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  -F "file=@../sample_data/portrait_growth_demo.xlsx" \
+  -F "file=@../sample_data/growthlens_synthetic_user_growth.xlsx" \
   http://localhost:8000/api/analysis/growth
 ```
 
-响应统一包含 `schema_mapping`、`analysis_context`、`data_quality`、
-`metrics`、`funnel` 和 `channels`。
+用户级响应包含 `dataset_type=user_level`、`schema_mapping`、
+`analysis_context`、`data_quality`、`metrics`、`funnel` 和 `channels`。
+聚合经营报表和暂不支持的数据结构返回对应 `dataset_type`，未完成的
+分析字段为 `null`，不会用 `0` 代替不可用指标。
 详细口径见 [增长分析口径](../docs/growth-analysis.md)。
 
 AI 增长报告：

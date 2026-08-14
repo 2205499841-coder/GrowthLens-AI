@@ -40,30 +40,25 @@ export function AnalysisContextPanel({
     <article className="analysis-context-panel">
       <div className="analysis-context-primary">
         <div className="analysis-context-label-row">
-          <span className="analysis-context-mark">AI</span>
-          <span>智能识别分析场景</span>
+          <span className="analysis-context-mark">01</span>
+          <span>数据类型</span>
         </div>
-        <strong>
-          {ANALYSIS_TYPE_LABELS[resolvedContext.analysis_type]}
-        </strong>
-        <code>{resolvedContext.analysis_type}</code>
+        <strong>用户级行为明细</strong>
+        <p>按用户行为记录计算转化与渠道表现</p>
       </div>
 
       <div className="analysis-context-business">
-        <span>业务类型</span>
+        <span>分析场景</span>
+        <strong>
+          {ANALYSIS_TYPE_LABELS[resolvedContext.analysis_type]}
+        </strong>
+      </div>
+
+      <div className="analysis-context-business">
+        <span>业务范围</span>
         <strong>
           {BUSINESS_TYPE_LABELS[resolvedContext.business_type]}
         </strong>
-        <code>{resolvedContext.business_type}</code>
-      </div>
-
-      <div className="analysis-context-metrics">
-        <span>建议重点关注</span>
-        <div>
-          {resolvedContext.recommended_metrics.map((metric) => (
-            <span key={metric}>{metric}</span>
-          ))}
-        </div>
       </div>
     </article>
   );

@@ -5,7 +5,11 @@ from typing import Any, Protocol
 from pydantic import ValidationError
 
 from app.core.config import settings
-from app.schemas.analysis_context import AnalysisContext, AnalysisType
+from app.schemas.analysis_context import (
+    AnalysisContext,
+    AnalysisType,
+    DatasetType,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -45,6 +49,146 @@ DEFAULT_ANALYSIS_CONTEXT = AnalysisContext(
     business_type="general",
     recommended_metrics=list(METRIC_CATALOG["user_growth"]),
 )
+
+
+USER_IDENTIFIER_HINTS = (
+    "userid",
+    "用户id",
+    "用户编号",
+    "用户标识",
+    "客户id",
+    "客户编号",
+    "会员id",
+    "会员编号",
+)
+USER_EVENT_HINTS = (
+    "注册时间",
+    "注册日期",
+    "浏览时间",
+    "访问时间",
+    "留资时间",
+    "咨询时间",
+    "预约时间",
+    "到店时间",
+    "支付时间",
+    "成交时间",
+    "registertime",
+    "viewtime",
+    "leadtime",
+    "appointmenttime",
+    "visittime",
+    "paytime",
+)
+AGGREGATE_COUNT_HINTS = (
+    "人数",
+    "用户数",
+    "访客数",
+    "浏览量",
+    "访问量",
+    "订单数",
+    "支付数",
+    "成交数",
+    "uv",
+)
+AGGREGATE_RATE_HINTS = (
+    "转化率",
+    "成交率",
+    "支付率",
+    "预约率",
+    "到店率",
+)
+AGGREGATE_AMOUNT_HINTS = (
+    "gmv",
+    "销售额",
+    "交易额",
+    "客单价",
+    "收入",
+)
+COMPARISON_HINTS = (
+    "同比",
+    "环比",
+    "同期",
+    "较上期",
+    "偏差",
+)
+DIMENSION_HINTS = (
+    "品类",
+    "类目",
+    "分类",
+    "渠道",
+    "地区",
+    "城市",
+    "用户类型",
+    "日期",
+    "月份",
+)
+
+
+def classify_dataset_type(
+    columns: list[str] | tuple[str, ...],
+) -> DatasetType:
+    """Classify the workbook shape without making AI availability a blocker."""
+    normalized_columns = [
+        _compact_column_name(column)
+        for column in _normalize_columns(columns)
+    ]
+    if not normalized_columns:
+        return "unsupported"
+
+    has_user_identifier = _contains_any(
+        normalized_columns,
+        USER_IDENTIFIER_HINTS,
+    )
+    user_event_count = _count_matching_columns(
+        normalized_columns,
+        USER_EVENT_HINTS,
+    )
+    if has_user_identifier and user_event_count >= 1:
+        return "user_level"
+
+    count_metric_count = _count_matching_columns(
+        normalized_columns,
+        AGGREGATE_COUNT_HINTS,
+    )
+    rate_metric_count = _count_matching_columns(
+        normalized_columns,
+        AGGREGATE_RATE_HINTS,
+    )
+    amount_metric_count = _count_matching_columns(
+        normalized_columns,
+        AGGREGATE_AMOUNT_HINTS,
+    )
+    comparison_count = _count_matching_columns(
+        normalized_columns,
+        COMPARISON_HINTS,
+    )
+    dimension_count = _count_matching_columns(
+        normalized_columns,
+        DIMENSION_HINTS,
+    )
+    aggregate_metric_count = (
+        count_metric_count
+        + rate_metric_count
+        + amount_metric_count
+        + comparison_count
+    )
+
+    if not has_user_identifier and (
+        count_metric_count >= 2
+        or (
+            dimension_count >= 1
+            and aggregate_metric_count >= 2
+        )
+        or (
+            count_metric_count >= 1
+            and rate_metric_count >= 1
+        )
+    ):
+        return "aggregate_metrics"
+
+    if has_user_identifier:
+        return "user_level"
+    return "unsupported"
 
 
 CLASSIFIER_SYSTEM_PROMPT = (
@@ -256,3 +400,25 @@ def _normalize_columns(columns: list[str] | tuple[str, ...]) -> list[str]:
         if value and value not in normalized:
             normalized.append(value)
     return normalized
+
+
+def _compact_column_name(column: str) -> str:
+    return "".join(str(column).strip().casefold().split()).replace("_", "")
+
+
+def _contains_any(columns: list[str], hints: tuple[str, ...]) -> bool:
+    return any(
+        hint in column
+        for column in columns
+        for hint in hints
+    )
+
+
+def _count_matching_columns(
+    columns: list[str],
+    hints: tuple[str, ...],
+) -> int:
+    return sum(
+        any(hint in column for hint in hints)
+        for column in columns
+    )

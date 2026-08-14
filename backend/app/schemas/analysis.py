@@ -24,18 +24,18 @@ class DataQualitySummary(BaseModel):
 
 class UserCounts(BaseModel):
     registered_users: int = Field(ge=0)
-    viewed_users: int = Field(ge=0)
-    lead_users: int = Field(ge=0)
-    appointment_users: int = Field(ge=0)
-    visit_users: int = Field(ge=0)
+    viewed_users: int | None = Field(default=None, ge=0)
+    lead_users: int | None = Field(default=None, ge=0)
+    appointment_users: int | None = Field(default=None, ge=0)
+    visit_users: int | None = Field(default=None, ge=0)
     paid_users: int = Field(ge=0)
 
 
 class ConversionRates(BaseModel):
-    view_rate: float = Field(ge=0, le=1)
-    lead_rate: float = Field(ge=0, le=1)
-    appointment_rate: float = Field(ge=0, le=1)
-    visit_rate: float = Field(ge=0, le=1)
+    view_rate: float | None = Field(default=None, ge=0, le=1)
+    lead_rate: float | None = Field(default=None, ge=0, le=1)
+    appointment_rate: float | None = Field(default=None, ge=0, le=1)
+    visit_rate: float | None = Field(default=None, ge=0, le=1)
     paid_rate: float = Field(ge=0, le=1)
 
 
@@ -70,6 +70,8 @@ class AppliedSchemaMapping(BaseModel):
 
 
 class GrowthAnalysisResponse(BaseModel):
+    dataset_type: Literal["user_level"] = "user_level"
+    analysis_status: Literal["ready"] = "ready"
     metadata: AnalysisMetadata
     data_ingestion: DataIngestionSummary
     schema_mapping: AppliedSchemaMapping
@@ -78,3 +80,20 @@ class GrowthAnalysisResponse(BaseModel):
     metrics: GrowthMetrics
     funnel: FunnelAnalysis
     channels: dict[str, GrowthMetrics]
+
+
+class DatasetPlaceholderResponse(BaseModel):
+    dataset_type: Literal["aggregate_metrics", "unsupported"]
+    analysis_status: Literal["unavailable"] = "unavailable"
+    metadata: AnalysisMetadata
+    message: str
+    data_ingestion: None = None
+    schema_mapping: None = None
+    analysis_context: None = None
+    data_quality: None = None
+    metrics: None = None
+    funnel: None = None
+    channels: None = None
+
+
+AnalysisResponse = GrowthAnalysisResponse | DatasetPlaceholderResponse

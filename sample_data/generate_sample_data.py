@@ -1,4 +1,4 @@
-"""Generate reproducible portrait-studio mini-program growth demo data."""
+"""Generate reproducible, synthetic user-level growth example data."""
 
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -7,7 +7,9 @@ import random
 import pandas as pd
 
 
-OUTPUT_PATH = Path(__file__).with_name("portrait_growth_demo.xlsx")
+OUTPUT_PATH = Path(__file__).with_name(
+    "growthlens_synthetic_user_growth.xlsx"
+)
 RANDOM_SEED = 20260731
 CHANNEL_CONFIG = {
     "小红书": {

@@ -2,6 +2,10 @@ export function formatInteger(value: number): string {
   return value.toLocaleString("zh-CN");
 }
 
+export function formatOptionalInteger(value: number | null): string {
+  return value === null ? "不可用" : formatInteger(value);
+}
+
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat("zh-CN", {
     style: "currency",
@@ -25,6 +29,10 @@ export function formatPercent(value: number): string {
     minimumFractionDigits: 1,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+export function formatOptionalPercent(value: number | null): string {
+  return value === null ? "不可用" : formatPercent(value);
 }
 
 export function formatDateRange(

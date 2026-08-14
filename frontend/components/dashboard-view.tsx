@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { AIGrowthDiagnosis } from "@/components/ai-growth-diagnosis";
 import { AIReportSection } from "@/components/ai-report-section";
 import { AnalysisContextPanel } from "@/components/analysis-context-panel";
 import { ChannelBarChart } from "@/components/channel-bar-chart";
@@ -9,6 +8,8 @@ import {
   formatCurrency,
   formatCurrencyPrecise,
   formatInteger,
+  formatOptionalInteger,
+  formatOptionalPercent,
   formatPercent,
 } from "@/lib/formatters";
 import type {
@@ -16,11 +17,8 @@ import type {
   GrowthAnalysisResult,
   GrowthMetrics,
 } from "@/types/analysis";
-import type { AIReport } from "@/types/ai-report";
 
 interface DashboardViewProps {
-  aiReport: AIReport | null;
-  onAIReportGenerated: (report: AIReport) => void;
   result: GrowthAnalysisResult;
 }
 
@@ -32,8 +30,6 @@ interface SummaryCard {
 }
 
 export function DashboardView({
-  aiReport,
-  onAIReportGenerated,
   result,
 }: DashboardViewProps) {
   const quality = result.data_quality;
@@ -99,20 +95,19 @@ export function DashboardView({
 
   return (
     <div className="dashboard-content">
-      {aiReport ? (
-        <DashboardSection
-          eyebrow="AI growth diagnosis"
-          title="AI 增长诊断"
-          description="汇总当前增长阶段、核心问题与优先行动，帮助快速进入决策。"
-        >
-          <AIGrowthDiagnosis report={aiReport} />
-        </DashboardSection>
-      ) : null}
+      <AIReportSection
+        analysis={result}
+        key={[
+          result.metadata.file_name,
+          result.data_quality.valid_user_count,
+          result.metrics.revenue.gmv,
+        ].join("-")}
+      />
 
       <DashboardSection
-        eyebrow="Data understanding"
-        title="AI 数据理解"
-        description="自动识别业务场景与字段语义，建立统一、可信的增长分析口径。"
+        eyebrow="Data confidence"
+        title="数据识别与可信度"
+        description="确认数据类型与分析口径；详细字段对应关系按需展开。"
       >
         <div className="data-understanding-stack">
           <AnalysisContextPanel context={result.analysis_context} />
@@ -162,15 +157,6 @@ export function DashboardView({
         <ChannelTable channels={channels} />
       </DashboardSection>
 
-      <AIReportSection
-        analysis={result}
-        onReportGenerated={onAIReportGenerated}
-        key={[
-          result.metadata.file_name,
-          result.data_quality.valid_user_count,
-          result.metrics.revenue.gmv,
-        ].join("-")}
-      />
     </div>
   );
 }
@@ -320,12 +306,12 @@ function ChannelTable({
                   )}
                 </td>
                 <td>
-                  {formatInteger(
+                  {formatOptionalInteger(
                     channelMetrics.user_counts.appointment_users,
                   )}
                 </td>
                 <td>
-                  {formatPercent(
+                  {formatOptionalPercent(
                     channelMetrics.conversion_rates.visit_rate,
                   )}
                 </td>

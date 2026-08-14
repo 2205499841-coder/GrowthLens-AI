@@ -1,4 +1,7 @@
-import type { GrowthAnalysisResult } from "@/types/analysis";
+import type {
+  AnalysisResult,
+  GrowthAnalysisResult,
+} from "@/types/analysis";
 import type { AIReport } from "@/types/ai-report";
 import type { ExcelParseResult } from "@/types/upload";
 
@@ -49,7 +52,7 @@ export async function parseExcel(file: File): Promise<ExcelParseResult> {
 
 export async function analyzeGrowth(
   file: File,
-): Promise<GrowthAnalysisResult> {
+): Promise<AnalysisResult> {
   const body = new FormData();
   body.append("file", file);
 
@@ -62,7 +65,7 @@ export async function analyzeGrowth(
     throw await buildApiError(response, "增长分析失败，请稍后重试。");
   }
 
-  return (await response.json()) as GrowthAnalysisResult;
+  return (await response.json()) as AnalysisResult;
 }
 
 export async function generateAIReport(
@@ -100,7 +103,7 @@ export async function generateAIReport(
   });
 
   if (!response.ok) {
-    throw await buildApiError(response, "AI 增长报告生成失败，请稍后重试。");
+    throw await buildApiError(response, "AI 增长诊断生成失败，请稍后重试。");
   }
 
   return (await response.json()) as AIReport;

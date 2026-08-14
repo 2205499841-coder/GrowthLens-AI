@@ -17,18 +17,18 @@ export interface DataQualitySummary {
 
 export interface UserCounts {
   registered_users: number;
-  viewed_users: number;
-  lead_users: number;
-  appointment_users: number;
-  visit_users: number;
+  viewed_users: number | null;
+  lead_users: number | null;
+  appointment_users: number | null;
+  visit_users: number | null;
   paid_users: number;
 }
 
 export interface ConversionRates {
-  view_rate: number;
-  lead_rate: number;
-  appointment_rate: number;
-  visit_rate: number;
+  view_rate: number | null;
+  lead_rate: number | null;
+  appointment_rate: number | null;
+  visit_rate: number | null;
   paid_rate: number;
 }
 
@@ -75,6 +75,8 @@ export interface AnalysisContext {
 }
 
 export interface GrowthAnalysisResult {
+  dataset_type: "user_level";
+  analysis_status: "ready";
   metadata: AnalysisMetadata;
   data_ingestion: DataIngestionSummary;
   schema_mapping?: SchemaMappingSummary;
@@ -86,3 +88,21 @@ export interface GrowthAnalysisResult {
   };
   channels: Record<string, GrowthMetrics>;
 }
+
+export interface DatasetPlaceholderResult {
+  dataset_type: "aggregate_metrics" | "unsupported";
+  analysis_status: "unavailable";
+  metadata: AnalysisMetadata;
+  message: string;
+  data_ingestion: null;
+  schema_mapping: null;
+  analysis_context: null;
+  data_quality: null;
+  metrics: null;
+  funnel: null;
+  channels: null;
+}
+
+export type AnalysisResult =
+  | GrowthAnalysisResult
+  | DatasetPlaceholderResult;

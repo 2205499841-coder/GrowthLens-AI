@@ -22,30 +22,20 @@ export function SchemaMappingPanel({
   fallbackMapping,
   schemaMapping,
 }: SchemaMappingPanelProps) {
-  const source = schemaMapping?.source ?? "fixed";
   const mapping = schemaMapping?.mapping ?? fallbackMapping;
-  const isAI = source === "ai";
-  const sourceTitle = isAI ? "AI 语义字段映射" : "标准字段映射";
-  const sourceDescription = isAI
-    ? "已根据字段语义完成业务数据与增长指标口径对齐"
-    : "已根据标准字段与业务别名完成指标口径对齐";
+  const recognizedFieldCount = Object.values(mapping).filter(Boolean).length;
 
   return (
-    <article className={`schema-panel schema-panel-${source}`}>
-      <div className="schema-source-summary">
-        <span className="schema-source-mark" aria-hidden="true">
-          {isAI ? "AI" : "FX"}
-        </span>
+    <details className="schema-panel">
+      <summary className="schema-source-summary">
         <div>
-          <div className="schema-source-title-row">
-            <h3>{sourceTitle}</h3>
-            <span className="schema-source-badge">
-              {isAI ? "AI 智能识别" : "规则自动识别"}
-            </span>
-          </div>
-          <p>{sourceDescription}</p>
+          <h3>字段识别详情</h3>
+          <p>查看业务字段与分析口径的对应关系</p>
         </div>
-      </div>
+        <span className="schema-source-badge">
+          已识别 {recognizedFieldCount} 个字段
+        </span>
+      </summary>
 
       <div className="schema-mapping-grid">
         {STANDARD_FIELDS.map((field) => (
@@ -61,6 +51,6 @@ export function SchemaMappingPanel({
           </div>
         ))}
       </div>
-    </article>
+    </details>
   );
 }
