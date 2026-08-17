@@ -253,3 +253,231 @@ def test_titles_filters_empty_columns_and_two_level_header() -> None:
     assert result.dataset.header_rows == [4, 5]
     assert result.dataset.report_period == "2026-07"
     assert result.dataset.filters == {"统计周期": "2026-07"}
+
+
+def _diagnostic_headers() -> list[str]:
+    return [
+        "品类",
+        "浏览用户数",
+        "商详用户数",
+        "预约用户数",
+        "SKU选择用户数",
+        "预约时间确认用户数",
+        "提交订单用户数",
+        "支付用户数",
+        "支付转化率同比偏差（百分点）",
+        "支付转化率环比偏差（百分点）",
+        "浏览→商详同比偏差（百分点）",
+        "商详→预约同比偏差（百分点）",
+        "预约→SKU同比偏差（百分点）",
+        "SKU→时间确认环比偏差（百分点）",
+        "时间确认→提交订单环比偏差（百分点）",
+        "提交订单→支付环比偏差（百分点）",
+    ]
+
+
+def test_no_total_row_keeps_overall_kpis_and_funnel_empty() -> None:
+    content = _workbook_bytes(
+        ["品类", "浏览用户数", "预约用户数", "支付用户数"],
+        [
+            ["品类A", 1000, 300, 120],
+            ["品类B", 800, 260, 100],
+        ],
+    )
+    result = _analyze(content)
+
+    assert result.analysis_status == "ready"
+    assert result.data_quality.total_row_detected is False
+    assert result.kpis == []
+    assert result.funnel.stages == []
+    assert len(result.dimension_funnel_diagnostics) == 2
+
+
+def test_multistage_funnel_yoy_and_mom_are_recognized() -> None:
+    content = _workbook_bytes(
+        _diagnostic_headers(),
+        [
+            [
+                "证件品类",
+                1000,
+                800,
+                400,
+                300,
+                250,
+                200,
+                150,
+                0.04,
+                0.01,
+                0.02,
+                -0.0742,
+                0.2463,
+                0.03,
+                0.01,
+                0.02,
+            ]
+        ],
+        percent_columns=tuple(range(9, 17)),
+    )
+    result = _analyze(content)
+    summary = result.dimension_funnel_diagnostics[0]
+
+    assert len(summary.stages) == 6
+    appointment_to_sku = next(
+        stage
+        for stage in summary.stages
+        if stage.to_metric_key == "sku_selection_users"
+    )
+    sku_to_time = next(
+        stage
+        for stage in summary.stages
+        if stage.to_metric_key == "time_confirmation_users"
+    )
+    assert appointment_to_sku.yoy_delta == 0.2463
+    assert appointment_to_sku.yoy_unit == "percentage_point"
+    assert sku_to_time.mom_delta == 0.03
+    assert sku_to_time.mom_unit == "percentage_point"
+    assert summary.final_conversion_yoy == 0.04
+    assert summary.final_conversion_mom == 0.01
+
+
+def test_stage_comparison_can_be_derived_from_prior_period_counts() -> None:
+    content = _workbook_bytes(
+        [
+            "品类",
+            "浏览用户数",
+            "商详用户数",
+            "预约用户数",
+            "同期浏览用户数",
+            "同期商详用户数",
+            "同期预约用户数",
+            "上期浏览用户数",
+            "上期商详用户数",
+            "上期预约用户数",
+        ],
+        [["品类A", 1000, 800, 400, 1000, 700, 420, 1000, 750, 375]],
+    )
+    result = _analyze(content)
+    stages = result.dimension_funnel_diagnostics[0].stages
+
+    assert stages[0].yoy_delta == pytest.approx(0.1)
+    assert stages[0].mom_delta == pytest.approx(0.05)
+    assert stages[1].yoy_delta == pytest.approx(-0.1)
+    assert stages[1].mom_delta == pytest.approx(0.0)
+
+
+def test_selects_largest_improving_and_declining_stages() -> None:
+    content = _workbook_bytes(
+        _diagnostic_headers(),
+        [
+            [
+                "证件品类",
+                1000,
+                800,
+                400,
+                300,
+                250,
+                200,
+                150,
+                0.04,
+                0.01,
+                0.02,
+                -0.0742,
+                0.2463,
+                0.03,
+                0.01,
+                0.02,
+            ]
+        ],
+        percent_columns=tuple(range(9, 17)),
+    )
+    summary = _analyze(content).dimension_funnel_diagnostics[0]
+
+    assert summary.best_improving_stage is not None
+    assert summary.best_improving_stage.from_metric_key == "appointment_users"
+    assert summary.best_improving_stage.to_metric_key == "sku_selection_users"
+    assert summary.best_improving_stage.delta == 0.2463
+    assert summary.largest_declining_stage is not None
+    assert summary.largest_declining_stage.from_metric_key == "product_detail_users"
+    assert summary.largest_declining_stage.to_metric_key == "appointment_users"
+    assert summary.largest_declining_stage.delta == -0.0742
+    assert summary.diagnosis_level == "high"
+
+
+def test_strict_scale_conversion_rules_identify_only_clear_outliers() -> None:
+    content = _workbook_bytes(
+        ["品类", "浏览用户数", "支付用户数"],
+        [
+            ["高流量低转化", 2000, 100],
+            ["常规A", 1000, 150],
+            ["常规B", 900, 126],
+            ["高转化低规模", 500, 100],
+        ],
+    )
+    result = _analyze(content)
+    diagnostic_types = {
+        (item.dimension_value, item.diagnostic_type)
+        for item in result.diagnostics
+    }
+
+    assert (
+        "高流量低转化",
+        "high_traffic_low_conversion",
+    ) in diagnostic_types
+    assert (
+        "高转化低规模",
+        "high_conversion_low_traffic",
+    ) in diagnostic_types
+    assert all(
+        item.dimension_value not in {"常规A", "常规B"}
+        for item in result.diagnostics
+        if item.diagnostic_type
+        in {"high_traffic_low_conversion", "high_conversion_low_traffic"}
+    )
+
+
+def test_scale_rule_does_not_label_moderate_size_as_insufficient() -> None:
+    content = _workbook_bytes(
+        ["品类", "浏览用户数", "支付用户数"],
+        [
+            ["品类A", 1200, 144],
+            ["品类B", 1000, 140],
+            ["品类C", 900, 144],
+        ],
+    )
+    result = _analyze(content)
+
+    assert not any(
+        item.diagnostic_type == "high_conversion_low_traffic"
+        for item in result.diagnostics
+    )
+
+
+def test_each_dimension_has_at_most_two_nonduplicate_diagnostics() -> None:
+    content = _workbook_bytes(
+        _diagnostic_headers(),
+        [
+            [
+                "证件品类",
+                1000,
+                800,
+                400,
+                300,
+                250,
+                200,
+                150,
+                0.04,
+                0.01,
+                0.02,
+                -0.0742,
+                0.2463,
+                0.03,
+                0.01,
+                0.02,
+            ]
+        ],
+        percent_columns=tuple(range(9, 17)),
+    )
+    diagnostics = _analyze(content).diagnostics
+
+    assert len(diagnostics) <= 2
+    assert len({item.title for item in diagnostics}) == len(diagnostics)

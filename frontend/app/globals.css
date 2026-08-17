@@ -1430,6 +1430,17 @@ tbody tr:hover {
   line-height: 1.6;
 }
 
+.aggregate-scope-notice {
+  background: var(--brand-soft);
+  border: 1px solid #dbe3ff;
+  border-radius: 11px;
+  color: #425692;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 30px;
+  padding: 14px 17px;
+}
+
 .aggregate-kpi-grid {
   display: grid;
   gap: 12px;
@@ -1442,6 +1453,53 @@ tbody tr:hover {
 
 .aggregate-table-card {
   margin-top: 0;
+}
+
+.diagnosis-summary-table,
+.business-insights-table {
+  min-width: 980px;
+}
+
+.diagnosis-summary-table th,
+.diagnosis-summary-table td,
+.business-insights-table th,
+.business-insights-table td {
+  padding: 13px 16px;
+}
+
+.diagnosis-summary-table td:nth-child(n + 2),
+.business-insights-table td:nth-child(n + 2) {
+  text-align: left;
+}
+
+.diagnosis-level {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 750;
+  padding: 5px 8px;
+}
+
+.diagnosis-level.level-high {
+  background: #fff0ee;
+  color: var(--danger);
+}
+
+.diagnosis-level.level-medium {
+  background: var(--accent-soft);
+  color: #8a651f;
+}
+
+.diagnosis-level.level-low {
+  background: #edf5f2;
+  color: var(--success);
+}
+
+.insight-evidence-cell {
+  color: var(--muted);
+  line-height: 1.55;
+  min-width: 320px;
+  white-space: normal;
 }
 
 .aggregate-signal-grid {

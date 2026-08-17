@@ -159,12 +159,69 @@ class DimensionPerformance(StrictSchema):
     ] | None
 
 
+class DimensionFunnelStage(StrictSchema):
+    from_metric_key: str
+    from_label: str
+    to_metric_key: str
+    to_label: str
+    current_conversion_rate: float | None
+    yoy_delta: float | None
+    mom_delta: float | None
+    yoy_unit: Literal["ratio_change", "percentage_point"] | None
+    mom_unit: Literal["ratio_change", "percentage_point"] | None
+
+
+class StageMovement(StrictSchema):
+    from_metric_key: str
+    from_label: str
+    to_metric_key: str
+    to_label: str
+    delta: float
+    comparison: Literal["yoy", "mom"]
+    unit: Literal["ratio_change", "percentage_point"]
+
+
+class WeakestStage(StrictSchema):
+    from_metric_key: str
+    from_label: str
+    to_metric_key: str
+    to_label: str
+    current_conversion_rate: float
+    peer_median_conversion_rate: float | None
+    yoy_delta: float | None
+    mom_delta: float | None
+
+
+class DimensionFunnelDiagnosis(StrictSchema):
+    dimension_value: str
+    final_conversion_rate: float | None
+    final_conversion_yoy: float | None
+    final_conversion_mom: float | None
+    final_conversion_yoy_unit: Literal[
+        "ratio_change",
+        "percentage_point",
+    ] | None
+    final_conversion_mom_unit: Literal[
+        "ratio_change",
+        "percentage_point",
+    ] | None
+    stages: list[DimensionFunnelStage]
+    best_improving_stage: StageMovement | None
+    largest_declining_stage: StageMovement | None
+    weakest_stage: WeakestStage | None
+    diagnosis_level: DiagnosticSeverity
+
+
 class AggregateDiagnostic(StrictSchema):
     diagnostic_type: Literal[
         "high_traffic_low_conversion",
         "high_conversion_low_traffic",
+        "conversion_trend_improvement",
         "yoy_decline",
         "mom_decline",
+        "stage_improvement",
+        "stage_decline",
+        "weakest_stage",
         "funnel_dropoff",
         "gmv_payment_mismatch",
     ]
@@ -200,5 +257,6 @@ class AggregateAnalysisResponse(StrictSchema):
     kpis: list[AggregateKPI]
     funnel: AggregateFunnel
     dimension_performance: list[DimensionPerformance]
+    dimension_funnel_diagnostics: list[DimensionFunnelDiagnosis]
     diagnostics: list[AggregateDiagnostic]
     opportunities: list[AggregateOpportunity]

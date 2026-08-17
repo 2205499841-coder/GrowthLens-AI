@@ -10,8 +10,11 @@ import {
 } from "@/lib/formatters";
 import type {
   AggregateAnalysisResult,
+  AggregateDiagnostic,
   AggregateFunnelStage,
   AggregateKpi,
+  AggregateOpportunity,
+  DimensionFunnelDiagnosis,
   DimensionPerformance,
 } from "@/types/analysis";
 
@@ -22,6 +25,7 @@ export function AggregateDashboard({
   result: AggregateAnalysisResult;
 }) {
   const dimensionLabel = result.dimensions[0]?.label ?? "业务维度";
+  const hasReliableOverallScope = result.data_quality.total_row_detected;
 
   return (
     <div className="dashboard-content aggregate-dashboard">
@@ -34,12 +38,18 @@ export function AggregateDashboard({
         </div>
       ) : null}
 
-      <AggregateSection
-        eyebrow="Performance overview"
-        title="核心经营指标"
-        description="根据当前报表可用字段动态展示；缺失指标不会以 0 代替。"
-      >
-        {result.kpis.length ? (
+      {!hasReliableOverallScope ? (
+        <div className="aggregate-scope-notice">
+          当前报表未提供可安全汇总的整体口径，以下优先展示{dimensionLabel}维度分析。
+        </div>
+      ) : null}
+
+      {hasReliableOverallScope && result.kpis.length ? (
+        <AggregateSection
+          eyebrow="Performance overview"
+          title="核心经营指标"
+          description="根据当前报表可用字段动态展示；缺失指标不会以 0 代替。"
+        >
           <div className="aggregate-kpi-grid">
             {result.kpis.map((kpi) => (
               <article className="summary-card aggregate-kpi-card" key={kpi.metric_key}>
@@ -49,18 +59,18 @@ export function AggregateDashboard({
               </article>
             ))}
           </div>
-        ) : (
-          <EmptyPanel text="当前报表没有可安全汇总的整体指标。" />
-        )}
-      </AggregateSection>
+        </AggregateSection>
+      ) : null}
 
-      <AggregateSection
-        eyebrow="Dynamic funnel"
-        title="动态转化漏斗"
-        description="按已识别字段的业务语义排序，允许跳过报表中不存在的节点。"
-      >
-        <AggregateFunnel stages={result.funnel.stages} />
-      </AggregateSection>
+      {hasReliableOverallScope && result.funnel.stages.length ? (
+        <AggregateSection
+          eyebrow="Dynamic funnel"
+          title="动态转化漏斗"
+          description="按已识别字段的业务语义排序，允许跳过报表中不存在的节点。"
+        >
+          <AggregateFunnel stages={result.funnel.stages} />
+        </AggregateSection>
+      ) : null}
 
       <AggregateSection
         eyebrow="Dimension performance"
@@ -74,49 +84,25 @@ export function AggregateDashboard({
       </AggregateSection>
 
       <AggregateSection
-        eyebrow="Business diagnostics"
-        title="异常诊断"
-        description="通过规模、转化、漏斗及同比环比变化定位值得优先核查的问题。"
+        eyebrow="Funnel diagnosis"
+        title={`${dimensionLabel}漏斗诊断摘要`}
+        description="聚焦最终支付转化、阶段变化和主要正负向节点。"
       >
-        {result.diagnostics.length ? (
-          <div className="aggregate-signal-grid">
-            {result.diagnostics.map((diagnostic, index) => (
-              <article
-                className={`aggregate-signal-card severity-${diagnostic.severity}`}
-                key={`${diagnostic.diagnostic_type}-${diagnostic.dimension_value ?? "overall"}-${index}`}
-              >
-                <span>{severityLabel(diagnostic.severity)}</span>
-                <h3>{diagnostic.title}</h3>
-                <p>{diagnostic.evidence}</p>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <EmptyPanel text="当前可用指标中未发现达到规则阈值的明显异常。" />
-        )}
+        <CategoryDiagnosisTable
+          dimensionLabel={dimensionLabel}
+          rows={result.dimension_funnel_diagnostics}
+        />
       </AggregateSection>
 
       <AggregateSection
-        eyebrow="Growth opportunities"
-        title="增长机会"
-        description="识别高转化低规模、高 GMV 或转化改善明显的维度。"
+        eyebrow="Business insights"
+        title="重点经营洞察"
+        description="每个维度最多保留两条高信号结论，避免重复提示。"
       >
-        {result.opportunities.length ? (
-          <div className="aggregate-signal-grid">
-            {result.opportunities.map((opportunity, index) => (
-              <article
-                className="aggregate-signal-card opportunity-card"
-                key={`${opportunity.opportunity_type}-${opportunity.dimension_value}-${index}`}
-              >
-                <span>机会</span>
-                <h3>{opportunity.title}</h3>
-                <p>{opportunity.evidence}</p>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <EmptyPanel text="当前可用指标不足以形成可靠的增长机会判断。" />
-        )}
+        <BusinessInsights
+          diagnostics={result.diagnostics}
+          opportunities={result.opportunities}
+        />
       </AggregateSection>
     </div>
   );
@@ -268,6 +254,147 @@ function PerformanceTable({
       </div>
     </article>
   );
+}
+
+
+function CategoryDiagnosisTable({
+  dimensionLabel,
+  rows,
+}: {
+  dimensionLabel: string;
+  rows: DimensionFunnelDiagnosis[];
+}) {
+  if (!rows.length) {
+    return <EmptyPanel text="当前报表没有可生成的维度漏斗摘要。" />;
+  }
+  return (
+    <article className="table-card aggregate-table-card">
+      <div className="table-scroll">
+        <table className="diagnosis-summary-table">
+          <thead>
+            <tr>
+              <th>{dimensionLabel}</th>
+              <th>支付转化率</th>
+              <th>同比</th>
+              <th>环比</th>
+              <th>最大改善节点</th>
+              <th>最大拖累节点</th>
+              <th>诊断级别</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.dimension_value}>
+                <td><strong>{row.dimension_value}</strong></td>
+                <td>{formatOptionalPercent(row.final_conversion_rate)}</td>
+                <td>
+                  {formatComparison(
+                    row.final_conversion_yoy,
+                    row.final_conversion_yoy_unit,
+                  )}
+                </td>
+                <td>
+                  {formatComparison(
+                    row.final_conversion_mom,
+                    row.final_conversion_mom_unit,
+                  )}
+                </td>
+                <td>{formatMovement(row.best_improving_stage)}</td>
+                <td>{formatMovement(row.largest_declining_stage)}</td>
+                <td>
+                  <span className={`diagnosis-level level-${row.diagnosis_level}`}>
+                    {severityLabel(row.diagnosis_level)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  );
+}
+
+
+function BusinessInsights({
+  diagnostics,
+  opportunities,
+}: {
+  diagnostics: AggregateDiagnostic[];
+  opportunities: AggregateOpportunity[];
+}) {
+  const counts = new Map<string, number>();
+  const insights = diagnostics.map((item) => {
+    const dimension = item.dimension_value ?? "整体";
+    counts.set(dimension, (counts.get(dimension) ?? 0) + 1);
+    return {
+      dimension,
+      title: item.title,
+      evidence: item.evidence,
+      severity: item.severity,
+    };
+  });
+  for (const item of opportunities) {
+    const currentCount = counts.get(item.dimension_value) ?? 0;
+    if (currentCount >= 2) continue;
+    insights.push({
+      dimension: item.dimension_value,
+      title: item.title,
+      evidence: item.evidence,
+      severity: "low",
+    });
+    counts.set(item.dimension_value, currentCount + 1);
+  }
+  if (!insights.length) {
+    return <EmptyPanel text="当前数据未达到高信号经营洞察的触发阈值。" />;
+  }
+  return (
+    <article className="table-card aggregate-table-card">
+      <div className="table-scroll">
+        <table className="business-insights-table">
+          <thead>
+            <tr>
+              <th>维度</th>
+              <th>结论</th>
+              <th>数据证据</th>
+              <th>优先级</th>
+            </tr>
+          </thead>
+          <tbody>
+            {insights.map((item, index) => (
+              <tr key={`${item.dimension}-${item.title}-${index}`}>
+                <td><strong>{item.dimension}</strong></td>
+                <td>{item.title}</td>
+                <td className="insight-evidence-cell">{item.evidence}</td>
+                <td>
+                  <span className={`diagnosis-level level-${item.severity}`}>
+                    {severityLabel(item.severity)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  );
+}
+
+
+function formatMovement(
+  movement: DimensionFunnelDiagnosis["best_improving_stage"],
+): string {
+  if (!movement) return "不可用";
+  const period = movement.comparison === "yoy" ? "同比" : "环比";
+  return `${shortStageLabel(movement.from_label)}→${shortStageLabel(movement.to_label)} ${period}${formatComparison(
+    movement.delta,
+    movement.unit,
+  )}`;
+}
+
+
+function shortStageLabel(label: string): string {
+  return label.replaceAll("用户", "").trim();
 }
 
 

@@ -48,6 +48,7 @@ COMPARISON_HINTS = (
     "同比",
     "同期",
     "环比",
+    "环期",
     "上期",
     "较上期",
     "百分点",
@@ -195,7 +196,15 @@ METRIC_RULES = (
     _MetricRule(
         "traffic_to_detail_rate",
         "浏览至商详转化率",
-        ("浏览至商详转化率", "浏览到商详转化率", "浏览→商详转化率", "商详转化率"),
+        (
+            "浏览至商详转化率",
+            "浏览到商详转化率",
+            "浏览→商详转化率",
+            "浏览至商详",
+            "浏览到商详",
+            "浏览→商详",
+            "商详转化率",
+        ),
         "rate_metric",
         "ratio",
         "weighted_rate",
@@ -203,7 +212,14 @@ METRIC_RULES = (
     _MetricRule(
         "detail_to_appointment_rate",
         "商详至预约转化率",
-        ("商详至预约转化率", "商详到预约转化率", "商详→预约转化率"),
+        (
+            "商详至预约转化率",
+            "商详到预约转化率",
+            "商详→预约转化率",
+            "商详至预约",
+            "商详到预约",
+            "商详→预约",
+        ),
         "rate_metric",
         "ratio",
         "weighted_rate",
@@ -211,7 +227,14 @@ METRIC_RULES = (
     _MetricRule(
         "appointment_to_sku_rate",
         "预约至 SKU 选择转化率",
-        ("预约至sku转化率", "预约到sku转化率", "预约→sku转化率"),
+        (
+            "预约至sku转化率",
+            "预约到sku转化率",
+            "预约→sku转化率",
+            "预约至sku",
+            "预约到sku",
+            "预约→sku",
+        ),
         "rate_metric",
         "ratio",
         "weighted_rate",
@@ -219,7 +242,14 @@ METRIC_RULES = (
     _MetricRule(
         "sku_to_time_confirmation_rate",
         "SKU 至时间确认转化率",
-        ("sku至时间确认转化率", "sku到时间确认转化率", "sku→时间确认转化率"),
+        (
+            "sku至时间确认转化率",
+            "sku到时间确认转化率",
+            "sku→时间确认转化率",
+            "sku至时间确认",
+            "sku到时间确认",
+            "sku→时间确认",
+        ),
         "rate_metric",
         "ratio",
         "weighted_rate",
@@ -227,7 +257,14 @@ METRIC_RULES = (
     _MetricRule(
         "time_confirmation_to_order_rate",
         "时间确认至提交订单转化率",
-        ("时间确认至提交订单转化率", "时间确认到下单转化率", "时间确认→提交订单转化率"),
+        (
+            "时间确认至提交订单转化率",
+            "时间确认到下单转化率",
+            "时间确认→提交订单转化率",
+            "时间确认至提交订单",
+            "时间确认到下单",
+            "时间确认→提交订单",
+        ),
         "rate_metric",
         "ratio",
         "weighted_rate",
@@ -235,7 +272,14 @@ METRIC_RULES = (
     _MetricRule(
         "order_to_payment_rate",
         "提交订单至支付转化率",
-        ("提交订单至支付转化率", "下单到支付转化率", "提交订单→支付转化率"),
+        (
+            "提交订单至支付转化率",
+            "下单到支付转化率",
+            "提交订单→支付转化率",
+            "提交订单至支付",
+            "下单到支付",
+            "提交订单→支付",
+        ),
         "rate_metric",
         "ratio",
         "weighted_rate",
@@ -289,6 +333,23 @@ KPI_ORDER = (
     "gmv",
     "average_order_value",
 )
+
+FUNNEL_RATE_KEYS = {
+    ("traffic_users", "product_detail_users"): "traffic_to_detail_rate",
+    ("product_detail_users", "appointment_users"): (
+        "detail_to_appointment_rate"
+    ),
+    ("appointment_users", "sku_selection_users"): (
+        "appointment_to_sku_rate"
+    ),
+    ("sku_selection_users", "time_confirmation_users"): (
+        "sku_to_time_confirmation_rate"
+    ),
+    ("time_confirmation_users", "order_submission_users"): (
+        "time_confirmation_to_order_rate"
+    ),
+    ("order_submission_users", "payment_users"): "order_to_payment_rate",
+}
 
 
 @dataclass(frozen=True)
@@ -414,6 +475,18 @@ def analyze_aggregate_excel(
         comparison_lookup,
         parsed.number_formats,
     )
+    dimension_funnel_diagnostics = _build_dimension_funnel_diagnostics(
+        detail_rows,
+        primary_dimension,
+        funnel_definitions,
+        metric_lookup,
+        comparison_lookup,
+        parsed.number_formats,
+    )
+    _apply_final_comparisons_to_performance(
+        dimension_performance,
+        dimension_funnel_diagnostics,
+    )
     funnel, funnel_warnings = _build_dynamic_funnel(
         scope_row,
         scope_source,
@@ -425,7 +498,7 @@ def analyze_aggregate_excel(
     warnings.extend(funnel_warnings)
     diagnostics = _build_diagnostics(
         dimension_performance,
-        funnel,
+        dimension_funnel_diagnostics,
         detail_rows,
         primary_dimension,
         metric_lookup,
@@ -520,6 +593,7 @@ def analyze_aggregate_excel(
             "kpis": kpis,
             "funnel": funnel,
             "dimension_performance": dimension_performance,
+            "dimension_funnel_diagnostics": dimension_funnel_diagnostics,
             "diagnostics": diagnostics,
             "opportunities": opportunities,
         }
@@ -892,7 +966,7 @@ def _recognize_comparison(
         "yoy"
         if "同比" in normalized or "同期" in normalized
         else "mom"
-        if "环比" in normalized or "上期" in normalized
+        if "环比" in normalized or "环期" in normalized or "上期" in normalized
         else None
     )
     target_rule = next(
@@ -1322,9 +1396,442 @@ def _build_dynamic_funnel(
     return {"scope_dimension_value": scope_value, "stages": stages}, warnings
 
 
+def _build_dimension_funnel_diagnostics(
+    detail_rows: list[pd.Series],
+    primary_dimension: _SemanticField | None,
+    funnel_definitions: list[_SemanticField],
+    metric_lookup: dict[str, _SemanticField],
+    comparison_lookup: dict[
+        tuple[str | None, str | None],
+        list[_SemanticField],
+    ],
+    number_formats: dict[str, tuple[str, ...]],
+) -> list[dict[str, Any]]:
+    if primary_dimension is None:
+        return []
+
+    summaries: list[dict[str, Any]] = []
+    for row in detail_rows:
+        dimension_value = row.get(primary_dimension.source_column)
+        if not _has_value(dimension_value):
+            continue
+        stages = _build_row_funnel_stages(
+            row,
+            funnel_definitions,
+            metric_lookup,
+            comparison_lookup,
+            number_formats,
+        )
+        final_rate = _derive_final_conversion_rate(
+            row,
+            metric_lookup,
+            number_formats,
+        )
+        final_yoy, final_yoy_unit = _resolve_rate_comparison(
+            row,
+            current_rate=final_rate,
+            rate_metric_key="payment_conversion_rate",
+            from_metric_key="traffic_users",
+            to_metric_key="payment_users",
+            period="yoy",
+            metric_lookup=metric_lookup,
+            comparison_lookup=comparison_lookup,
+            number_formats=number_formats,
+        )
+        final_mom, final_mom_unit = _resolve_rate_comparison(
+            row,
+            current_rate=final_rate,
+            rate_metric_key="payment_conversion_rate",
+            from_metric_key="traffic_users",
+            to_metric_key="payment_users",
+            period="mom",
+            metric_lookup=metric_lookup,
+            comparison_lookup=comparison_lookup,
+            number_formats=number_formats,
+        )
+        summaries.append(
+            {
+                "dimension_value": str(dimension_value).strip(),
+                "final_conversion_rate": final_rate,
+                "final_conversion_yoy": final_yoy,
+                "final_conversion_mom": final_mom,
+                "final_conversion_yoy_unit": final_yoy_unit,
+                "final_conversion_mom_unit": final_mom_unit,
+                "stages": stages,
+                "best_improving_stage": _select_stage_movement(
+                    stages,
+                    direction="positive",
+                ),
+                "largest_declining_stage": _select_stage_movement(
+                    stages,
+                    direction="negative",
+                ),
+                "weakest_stage": None,
+                "diagnosis_level": "low",
+            }
+        )
+
+    peer_rates: dict[tuple[str, str], list[float]] = {}
+    for summary in summaries:
+        for stage in summary["stages"]:
+            current_rate = stage["current_conversion_rate"]
+            if current_rate is None:
+                continue
+            key = (stage["from_metric_key"], stage["to_metric_key"])
+            peer_rates.setdefault(key, []).append(current_rate)
+
+    for summary in summaries:
+        summary["weakest_stage"] = _select_weakest_stage(
+            summary["stages"],
+            peer_rates,
+        )
+        summary["diagnosis_level"] = _resolve_dimension_diagnosis_level(
+            summary
+        )
+    return summaries
+
+
+def _build_row_funnel_stages(
+    row: pd.Series,
+    funnel_definitions: list[_SemanticField],
+    metric_lookup: dict[str, _SemanticField],
+    comparison_lookup: dict[
+        tuple[str | None, str | None],
+        list[_SemanticField],
+    ],
+    number_formats: dict[str, tuple[str, ...]],
+) -> list[dict[str, Any]]:
+    available_stages: list[tuple[_SemanticField, int]] = []
+    for definition in funnel_definitions:
+        count = _as_int(_metric_value(row, definition, number_formats))
+        if count is not None:
+            available_stages.append((definition, count))
+
+    stages: list[dict[str, Any]] = []
+    for (from_stage, from_count), (to_stage, to_count) in zip(
+        available_stages,
+        available_stages[1:],
+    ):
+        rate_metric_key = FUNNEL_RATE_KEYS.get(
+            (from_stage.semantic_key, to_stage.semantic_key)
+        )
+        current_rate = (
+            round(to_count / from_count, 6)
+            if from_count > 0
+            else None
+        )
+        if current_rate is None and rate_metric_key is not None:
+            current_rate = _as_float(
+                _lookup_metric_value(
+                    row,
+                    rate_metric_key,
+                    metric_lookup,
+                    number_formats,
+                )
+            )
+        yoy, yoy_unit = _resolve_rate_comparison(
+            row,
+            current_rate=current_rate,
+            rate_metric_key=rate_metric_key,
+            from_metric_key=from_stage.semantic_key,
+            to_metric_key=to_stage.semantic_key,
+            period="yoy",
+            metric_lookup=metric_lookup,
+            comparison_lookup=comparison_lookup,
+            number_formats=number_formats,
+        )
+        mom, mom_unit = _resolve_rate_comparison(
+            row,
+            current_rate=current_rate,
+            rate_metric_key=rate_metric_key,
+            from_metric_key=from_stage.semantic_key,
+            to_metric_key=to_stage.semantic_key,
+            period="mom",
+            metric_lookup=metric_lookup,
+            comparison_lookup=comparison_lookup,
+            number_formats=number_formats,
+        )
+        stages.append(
+            {
+                "from_metric_key": from_stage.semantic_key,
+                "from_label": from_stage.label,
+                "to_metric_key": to_stage.semantic_key,
+                "to_label": to_stage.label,
+                "current_conversion_rate": current_rate,
+                "yoy_delta": yoy,
+                "mom_delta": mom,
+                "yoy_unit": yoy_unit,
+                "mom_unit": mom_unit,
+            }
+        )
+    return stages
+
+
+def _derive_final_conversion_rate(
+    row: pd.Series,
+    metric_lookup: dict[str, _SemanticField],
+    number_formats: dict[str, tuple[str, ...]],
+) -> float | None:
+    traffic = _lookup_metric_value(
+        row,
+        "traffic_users",
+        metric_lookup,
+        number_formats,
+    )
+    payment = _lookup_metric_value(
+        row,
+        "payment_users",
+        metric_lookup,
+        number_formats,
+    )
+    if traffic is not None and payment is not None and traffic > 0:
+        return round(payment / traffic, 6)
+    return _as_float(
+        _lookup_metric_value(
+            row,
+            "payment_conversion_rate",
+            metric_lookup,
+            number_formats,
+        )
+    )
+
+
+def _resolve_rate_comparison(
+    row: pd.Series,
+    *,
+    current_rate: float | None,
+    rate_metric_key: str | None,
+    from_metric_key: str,
+    to_metric_key: str,
+    period: str,
+    metric_lookup: dict[str, _SemanticField],
+    comparison_lookup: dict[
+        tuple[str | None, str | None],
+        list[_SemanticField],
+    ],
+    number_formats: dict[str, tuple[str, ...]],
+) -> tuple[float | None, str | None]:
+    if rate_metric_key is not None:
+        comparisons = comparison_lookup.get((rate_metric_key, period), [])
+        if comparisons:
+            comparison = comparisons[0]
+            if comparison.comparison_value_kind == "baseline":
+                baseline_rate = _coerce_numeric(
+                    row.get(comparison.source_column),
+                    "ratio",
+                    number_formats.get(comparison.source_column, ()),
+                )
+                if current_rate is not None and baseline_rate is not None:
+                    return (
+                        round(current_rate - baseline_rate, 6),
+                        "percentage_point",
+                    )
+            else:
+                value = _comparison_value(
+                    row,
+                    comparison,
+                    current_metric=metric_lookup.get(rate_metric_key),
+                    number_formats=number_formats,
+                )
+                if value is not None and comparison.comparison_unit in {
+                    "ratio_change",
+                    "percentage_point",
+                }:
+                    return value, comparison.comparison_unit
+
+    from_baseline = _comparison_baseline_value(
+        row,
+        from_metric_key,
+        period,
+        comparison_lookup,
+        number_formats,
+    )
+    to_baseline = _comparison_baseline_value(
+        row,
+        to_metric_key,
+        period,
+        comparison_lookup,
+        number_formats,
+    )
+    if (
+        current_rate is not None
+        and from_baseline is not None
+        and from_baseline > 0
+        and to_baseline is not None
+    ):
+        baseline_rate = to_baseline / from_baseline
+        return round(current_rate - baseline_rate, 6), "percentage_point"
+    return None, None
+
+
+def _comparison_baseline_value(
+    row: pd.Series,
+    metric_key: str,
+    period: str,
+    comparison_lookup: dict[
+        tuple[str | None, str | None],
+        list[_SemanticField],
+    ],
+    number_formats: dict[str, tuple[str, ...]],
+) -> float | None:
+    comparisons = comparison_lookup.get((metric_key, period), [])
+    baseline = next(
+        (
+            comparison
+            for comparison in comparisons
+            if comparison.comparison_value_kind == "baseline"
+        ),
+        None,
+    )
+    if baseline is None:
+        return None
+    return _coerce_numeric(
+        row.get(baseline.source_column),
+        "absolute",
+        number_formats.get(baseline.source_column, ()),
+    )
+
+
+def _select_stage_movement(
+    stages: list[dict[str, Any]],
+    *,
+    direction: str,
+) -> dict[str, Any] | None:
+    candidates: list[dict[str, Any]] = []
+    for stage in stages:
+        for comparison, delta_key, unit_key in (
+            ("yoy", "yoy_delta", "yoy_unit"),
+            ("mom", "mom_delta", "mom_unit"),
+        ):
+            delta = stage[delta_key]
+            unit = stage[unit_key]
+            if delta is None or unit is None:
+                continue
+            if direction == "positive" and delta < 0.02:
+                continue
+            if direction == "negative" and delta > -0.02:
+                continue
+            candidates.append(
+                {
+                    "from_metric_key": stage["from_metric_key"],
+                    "from_label": stage["from_label"],
+                    "to_metric_key": stage["to_metric_key"],
+                    "to_label": stage["to_label"],
+                    "delta": delta,
+                    "comparison": comparison,
+                    "unit": unit,
+                }
+            )
+    if not candidates:
+        return None
+    key = (lambda item: item["delta"])
+    return (
+        max(candidates, key=key)
+        if direction == "positive"
+        else min(candidates, key=key)
+    )
+
+
+def _select_weakest_stage(
+    stages: list[dict[str, Any]],
+    peer_rates: dict[tuple[str, str], list[float]],
+) -> dict[str, Any] | None:
+    row_rates = [
+        stage["current_conversion_rate"]
+        for stage in stages
+        if stage["current_conversion_rate"] is not None
+    ]
+    row_median = median(row_rates) if row_rates else None
+    candidates: list[tuple[float, dict[str, Any], float | None]] = []
+    for stage in stages:
+        current_rate = stage["current_conversion_rate"]
+        if current_rate is None:
+            continue
+        key = (stage["from_metric_key"], stage["to_metric_key"])
+        peers = peer_rates.get(key, [])
+        peer_median = median(peers) if len(peers) >= 2 else None
+        peer_gap = (
+            max(peer_median - current_rate, 0)
+            if peer_median is not None
+            else 0
+        )
+        row_gap = (
+            max(row_median - current_rate, 0)
+            if row_median is not None
+            else 0
+        )
+        negative_change = max(
+            -float(stage["yoy_delta"] or 0),
+            -float(stage["mom_delta"] or 0),
+            0,
+        )
+        score = peer_gap + negative_change + row_gap * 0.35
+        if peer_gap < 0.03 and negative_change < 0.03 and row_gap < 0.08:
+            continue
+        candidates.append((score, stage, peer_median))
+    if not candidates:
+        return None
+    _, stage, peer_median = max(candidates, key=lambda item: item[0])
+    return {
+        "from_metric_key": stage["from_metric_key"],
+        "from_label": stage["from_label"],
+        "to_metric_key": stage["to_metric_key"],
+        "to_label": stage["to_label"],
+        "current_conversion_rate": stage["current_conversion_rate"],
+        "peer_median_conversion_rate": peer_median,
+        "yoy_delta": stage["yoy_delta"],
+        "mom_delta": stage["mom_delta"],
+    }
+
+
+def _resolve_dimension_diagnosis_level(summary: dict[str, Any]) -> str:
+    movements = [
+        abs(value)
+        for value in (
+            summary["final_conversion_yoy"],
+            summary["final_conversion_mom"],
+            (
+                summary["best_improving_stage"]["delta"]
+                if summary["best_improving_stage"]
+                else None
+            ),
+            (
+                summary["largest_declining_stage"]["delta"]
+                if summary["largest_declining_stage"]
+                else None
+            ),
+        )
+        if value is not None
+    ]
+    maximum = max(movements, default=0)
+    if maximum >= 0.1:
+        return "high"
+    if maximum >= 0.05 or summary["weakest_stage"] is not None:
+        return "medium"
+    return "low"
+
+
+def _apply_final_comparisons_to_performance(
+    performance: list[dict[str, Any]],
+    summaries: list[dict[str, Any]],
+) -> None:
+    summary_lookup = {
+        summary["dimension_value"]: summary for summary in summaries
+    }
+    for item in performance:
+        summary = summary_lookup.get(item["dimension_value"])
+        if summary is None:
+            continue
+        item["conversion_rate"] = summary["final_conversion_rate"]
+        item["yoy"] = summary["final_conversion_yoy"]
+        item["mom"] = summary["final_conversion_mom"]
+        item["yoy_unit"] = summary["final_conversion_yoy_unit"]
+        item["mom_unit"] = summary["final_conversion_mom_unit"]
+
+
 def _build_diagnostics(
     performance: list[dict[str, Any]],
-    funnel: dict[str, Any],
+    dimension_funnels: list[dict[str, Any]],
     detail_rows: list[pd.Series],
     primary_dimension: _SemanticField | None,
     metric_lookup: dict[str, _SemanticField],
@@ -1334,7 +1841,157 @@ def _build_diagnostics(
     ],
     number_formats: dict[str, tuple[str, ...]],
 ) -> list[dict[str, Any]]:
-    diagnostics: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    for summary in dimension_funnels:
+        dimension_value = summary["dimension_value"]
+        final_rate = summary["final_conversion_rate"]
+        improvement = summary["best_improving_stage"]
+        decline = summary["largest_declining_stage"]
+        final_trend_added = False
+        comparisons = [
+            (
+                "yoy",
+                summary["final_conversion_yoy"],
+                summary["final_conversion_yoy_unit"],
+            ),
+            (
+                "mom",
+                summary["final_conversion_mom"],
+                summary["final_conversion_mom_unit"],
+            ),
+        ]
+        usable_comparisons = [
+            item for item in comparisons if item[1] is not None
+        ]
+        if usable_comparisons:
+            period, change, unit = max(
+                usable_comparisons,
+                key=lambda item: abs(item[1]),
+            )
+            if abs(change) >= 0.02:
+                period_label = "同比" if period == "yoy" else "环比"
+                improving = change > 0
+                positive_node_text = (
+                    f"主要正向节点为{_business_stage_label(improvement['from_label'])}→"
+                    f"{_business_stage_label(improvement['to_label'])}，"
+                    f"{('同比' if improvement['comparison'] == 'yoy' else '环比')}"
+                    f"{_comparison_text(improvement['delta'], improvement['unit'])}。"
+                    if improving and improvement is not None
+                    else ""
+                )
+                candidates.append(
+                    {
+                        "diagnostic_type": (
+                            "conversion_trend_improvement"
+                            if improving
+                            else "yoy_decline"
+                            if period == "yoy"
+                            else "mom_decline"
+                        ),
+                        "title": (
+                            f"{dimension_value}支付转化率{period_label}"
+                            f"{'明显改善' if improving else '明显下滑'}"
+                        ),
+                        "evidence": (
+                            f"当前支付转化率 "
+                            f"{_optional_percent_text(final_rate)}，"
+                            f"{period_label}"
+                            f"{_comparison_text(change, unit)}。"
+                            f"{positive_node_text}"
+                        ),
+                        "severity": _severity_for_change(change),
+                        "dimension_value": dimension_value,
+                        "metric_key": "payment_conversion_rate",
+                        "_score": abs(change) * 100 + 100,
+                        "_dedupe_key": "final_conversion_trend",
+                    }
+                )
+                final_trend_added = True
+
+        if decline is not None:
+            period_label = "同比" if decline["comparison"] == "yoy" else "环比"
+            candidates.append(
+                {
+                    "diagnostic_type": "stage_decline",
+                    "title": (
+                        f"{dimension_value}的"
+                        f"{_business_stage_label(decline['from_label'])}→"
+                        f"{_business_stage_label(decline['to_label'])}是主要拖累节点"
+                    ),
+                    "evidence": (
+                        f"该环节转化{period_label}"
+                        f"{_comparison_text(decline['delta'], decline['unit'])}。"
+                    ),
+                    "severity": _severity_for_change(decline["delta"]),
+                    "dimension_value": dimension_value,
+                    "metric_key": decline["to_metric_key"],
+                    "_score": abs(decline["delta"]) * 100 + 7,
+                    "_dedupe_key": (
+                        f"stage:{decline['from_metric_key']}:"
+                        f"{decline['to_metric_key']}"
+                    ),
+                }
+            )
+
+        if improvement is not None and not final_trend_added:
+            period_label = (
+                "同比" if improvement["comparison"] == "yoy" else "环比"
+            )
+            candidates.append(
+                {
+                    "diagnostic_type": "stage_improvement",
+                    "title": (
+                        f"{dimension_value}的"
+                        f"{_business_stage_label(improvement['from_label'])}→"
+                        f"{_business_stage_label(improvement['to_label'])}是主要正向节点"
+                    ),
+                    "evidence": (
+                        f"该环节转化{period_label}"
+                        f"{_comparison_text(improvement['delta'], improvement['unit'])}。"
+                    ),
+                    "severity": _severity_for_change(improvement["delta"]),
+                    "dimension_value": dimension_value,
+                    "metric_key": improvement["to_metric_key"],
+                    "_score": abs(improvement["delta"]) * 100 + 4,
+                    "_dedupe_key": (
+                        f"stage:{improvement['from_metric_key']}:"
+                        f"{improvement['to_metric_key']}"
+                    ),
+                }
+            )
+
+        weakest = summary["weakest_stage"]
+        if weakest is not None:
+            peer_text = (
+                f"，同环节品类中位数为 "
+                f"{_percent_text(weakest['peer_median_conversion_rate'])}"
+                if weakest["peer_median_conversion_rate"] is not None
+                else ""
+            )
+            candidates.append(
+                {
+                    "diagnostic_type": "weakest_stage",
+                    "title": (
+                        f"{dimension_value}的"
+                        f"{_business_stage_label(weakest['from_label'])}→"
+                        f"{_business_stage_label(weakest['to_label'])}是当前薄弱环节"
+                    ),
+                    "evidence": (
+                        "当前阶段转化率为 "
+                        f"{_percent_text(weakest['current_conversion_rate'])}"
+                        f"{peer_text}。"
+                    ),
+                    "severity": "medium",
+                    "dimension_value": dimension_value,
+                    "metric_key": weakest["to_metric_key"],
+                    "_score": 5,
+                    "_dedupe_key": (
+                        f"stage:{weakest['from_metric_key']}:"
+                        f"{weakest['to_metric_key']}"
+                    ),
+                }
+            )
+
     traffic_values = [
         item["traffic_users"]
         for item in performance
@@ -1345,7 +2002,7 @@ def _build_diagnostics(
         for item in performance
         if item["conversion_rate"] is not None
     ]
-    if traffic_values and conversion_values:
+    if len(traffic_values) >= 3 and len(conversion_values) >= 3:
         traffic_median = median(traffic_values)
         conversion_median = median(conversion_values)
         for item in performance:
@@ -1353,97 +2010,66 @@ def _build_diagnostics(
             conversion = item["conversion_rate"]
             if traffic is None or conversion is None:
                 continue
-            if traffic >= traffic_median and conversion < conversion_median:
-                diagnostics.append(
+            if (
+                traffic >= traffic_median * 1.2
+                and conversion <= conversion_median - 0.03
+            ):
+                candidates.append(
                     {
                         "diagnostic_type": "high_traffic_low_conversion",
                         "title": f"{item['dimension_value']}流量较高但转化偏低",
                         "evidence": (
-                            f"浏览用户 {traffic}，支付转化率 "
-                            f"{_percent_text(conversion)}。"
+                            f"浏览用户 {traffic}，高于同维度中位数 "
+                            f"{traffic_median:,.0f}；支付转化率 "
+                            f"{_percent_text(conversion)}，低于中位水平 "
+                            f"{_percent_text(conversion_median)}。"
                         ),
-                        "severity": "high" if traffic > traffic_median else "medium",
+                        "severity": (
+                            "high"
+                            if conversion <= conversion_median - 0.08
+                            else "medium"
+                        ),
                         "dimension_value": item["dimension_value"],
                         "metric_key": "payment_conversion_rate",
+                        "_score": (conversion_median - conversion) * 100 + 5,
+                        "_dedupe_key": "scale_conversion_position",
                     }
                 )
-            elif traffic < traffic_median and conversion >= conversion_median:
-                diagnostics.append(
+            elif (
+                traffic <= traffic_median * 0.7
+                and conversion >= conversion_median + 0.03
+            ):
+                candidates.append(
                     {
                         "diagnostic_type": "high_conversion_low_traffic",
-                        "title": f"{item['dimension_value']}转化较高但规模不足",
+                        "title": f"{item['dimension_value']}具备审慎扩量机会",
                         "evidence": (
-                            f"浏览用户 {traffic}，支付转化率 "
-                            f"{_percent_text(conversion)}。"
+                            f"支付转化率 {_percent_text(conversion)}，高于同维度"
+                            f"中位水平 {_percent_text(conversion_median)}；浏览用户 "
+                            f"{traffic}，低于中位数 {traffic_median:,.0f}。"
                         ),
                         "severity": "medium",
                         "dimension_value": item["dimension_value"],
                         "metric_key": "traffic_users",
+                        "_score": (conversion - conversion_median) * 100 + 3,
+                        "_dedupe_key": "scale_conversion_position",
                     }
                 )
-    for item in performance:
-        if _is_material_decline(item["yoy"], item["yoy_unit"]):
-            diagnostics.append(
-                {
-                    "diagnostic_type": "yoy_decline",
-                    "title": f"{item['dimension_value']}同比明显下滑",
-                    "evidence": (
-                        "同比变化 "
-                        f"{_comparison_text(item['yoy'], item['yoy_unit'])}。"
-                    ),
-                    "severity": (
-                        "high"
-                        if _is_severe_decline(item["yoy"], item["yoy_unit"])
-                        else "medium"
-                    ),
-                    "dimension_value": item["dimension_value"],
-                    "metric_key": "payment_conversion_rate",
-                }
-            )
-        if _is_material_decline(item["mom"], item["mom_unit"]):
-            diagnostics.append(
-                {
-                    "diagnostic_type": "mom_decline",
-                    "title": f"{item['dimension_value']}环比明显下滑",
-                    "evidence": (
-                        "环比变化 "
-                        f"{_comparison_text(item['mom'], item['mom_unit'])}。"
-                    ),
-                    "severity": (
-                        "high"
-                        if _is_severe_decline(item["mom"], item["mom_unit"])
-                        else "medium"
-                    ),
-                    "dimension_value": item["dimension_value"],
-                    "metric_key": "payment_conversion_rate",
-                }
-            )
-    for stage in funnel.get("stages", [])[1:]:
-        conversion = stage["conversion_rate_from_previous"]
-        if conversion is not None and conversion <= 0.6:
-            diagnostics.append(
-                {
-                    "diagnostic_type": "funnel_dropoff",
-                    "title": f"{stage['label']}节点流失明显",
-                    "evidence": (
-                        f"上一步转化率 {_percent_text(conversion)}，"
-                        f"流失 {stage['dropoff_count']} 人。"
-                    ),
-                    "severity": "high" if conversion <= 0.4 else "medium",
-                    "dimension_value": funnel.get("scope_dimension_value"),
-                    "metric_key": stage["metric_key"],
-                }
-            )
-    diagnostics.extend(
-        _build_gmv_payment_mismatch_diagnostics(
-            detail_rows,
-            primary_dimension,
-            metric_lookup,
-            comparison_lookup,
-            number_formats,
+    for diagnostic in _build_gmv_payment_mismatch_diagnostics(
+        detail_rows,
+        primary_dimension,
+        metric_lookup,
+        comparison_lookup,
+        number_formats,
+    ):
+        candidates.append(
+            {
+                **diagnostic,
+                "_score": 6,
+                "_dedupe_key": "gmv_payment_mismatch",
+            }
         )
-    )
-    return _deduplicate_diagnostics(diagnostics)
+    return _rank_and_limit_diagnostics(candidates)
 
 
 def _build_gmv_payment_mismatch_diagnostics(
@@ -1510,38 +2136,6 @@ def _build_opportunities(
     performance: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     opportunities: list[dict[str, Any]] = []
-    traffic_values = [
-        item["traffic_users"]
-        for item in performance
-        if item["traffic_users"] is not None
-    ]
-    conversion_values = [
-        item["conversion_rate"]
-        for item in performance
-        if item["conversion_rate"] is not None
-    ]
-    if traffic_values and conversion_values:
-        traffic_median = median(traffic_values)
-        conversion_median = median(conversion_values)
-        for item in performance:
-            if (
-                item["traffic_users"] is not None
-                and item["conversion_rate"] is not None
-                and item["traffic_users"] < traffic_median
-                and item["conversion_rate"] >= conversion_median
-            ):
-                opportunities.append(
-                    {
-                        "opportunity_type": "scale_high_conversion",
-                        "title": f"{item['dimension_value']}具备扩量潜力",
-                        "evidence": (
-                            f"当前浏览用户 {item['traffic_users']}，支付转化率 "
-                            f"{_percent_text(item['conversion_rate'])}。"
-                        ),
-                        "dimension_value": item["dimension_value"],
-                        "metric_key": "traffic_users",
-                    }
-                )
     gmv_items = [item for item in performance if item["gmv"] is not None]
     if gmv_items:
         top_gmv = max(gmv_items, key=lambda item: item["gmv"])
@@ -1554,29 +2148,6 @@ def _build_opportunities(
                 "metric_key": "gmv",
             }
         )
-    for item in performance:
-        changes = [
-            (change, unit)
-            for change, unit in (
-                (item["yoy"], item["yoy_unit"]),
-                (item["mom"], item["mom_unit"]),
-            )
-            if change is not None and unit in {"ratio_change", "percentage_point"}
-        ]
-        if changes and max(change for change, _ in changes) >= 0.05:
-            best_change, best_unit = max(changes, key=lambda item: item[0])
-            opportunities.append(
-                {
-                    "opportunity_type": "conversion_improvement",
-                    "title": f"{item['dimension_value']}经营表现改善",
-                    "evidence": (
-                        "可用比较周期最高改善 "
-                        f"{_comparison_text(best_change, best_unit)}。"
-                    ),
-                    "dimension_value": item["dimension_value"],
-                    "metric_key": "payment_conversion_rate",
-                }
-            )
     return opportunities
 
 
@@ -1879,6 +2450,23 @@ def _comparison_text(value: float, unit: str | None) -> str:
     return _signed_percent_text(value)
 
 
+def _optional_percent_text(value: float | None) -> str:
+    return "不可用" if value is None else _percent_text(value)
+
+
+def _business_stage_label(label: str) -> str:
+    return label.replace("用户", "").strip()
+
+
+def _severity_for_change(value: float) -> str:
+    magnitude = abs(value)
+    if magnitude >= 0.1:
+        return "high"
+    if magnitude >= 0.05:
+        return "medium"
+    return "low"
+
+
 def _is_material_decline(value: float | None, unit: str | None) -> bool:
     if value is None:
         return False
@@ -1909,3 +2497,36 @@ def _deduplicate_diagnostics(
         seen.add(key)
         result.append(diagnostic)
     return result
+
+
+def _rank_and_limit_diagnostics(
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for candidate in candidates:
+        dimension_value = str(candidate.get("dimension_value") or "__overall__")
+        grouped.setdefault(dimension_value, []).append(candidate)
+
+    selected: list[dict[str, Any]] = []
+    for dimension_candidates in grouped.values():
+        seen_keys: set[str] = set()
+        ranked = sorted(
+            dimension_candidates,
+            key=lambda item: float(item.get("_score", 0)),
+            reverse=True,
+        )
+        for candidate in ranked:
+            dedupe_key = str(candidate.get("_dedupe_key", candidate["title"]))
+            if dedupe_key in seen_keys:
+                continue
+            seen_keys.add(dedupe_key)
+            selected.append(
+                {
+                    key: value
+                    for key, value in candidate.items()
+                    if not key.startswith("_")
+                }
+            )
+            if len(seen_keys) >= 2:
+                break
+    return selected

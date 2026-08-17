@@ -148,12 +148,61 @@ export interface DimensionPerformance {
     | null;
 }
 
+export interface DimensionFunnelStage {
+  from_metric_key: string;
+  from_label: string;
+  to_metric_key: string;
+  to_label: string;
+  current_conversion_rate: number | null;
+  yoy_delta: number | null;
+  mom_delta: number | null;
+  yoy_unit: "ratio_change" | "percentage_point" | null;
+  mom_unit: "ratio_change" | "percentage_point" | null;
+}
+
+export interface StageMovement {
+  from_metric_key: string;
+  from_label: string;
+  to_metric_key: string;
+  to_label: string;
+  delta: number;
+  comparison: "yoy" | "mom";
+  unit: "ratio_change" | "percentage_point";
+}
+
+export interface DimensionFunnelDiagnosis {
+  dimension_value: string;
+  final_conversion_rate: number | null;
+  final_conversion_yoy: number | null;
+  final_conversion_mom: number | null;
+  final_conversion_yoy_unit: "ratio_change" | "percentage_point" | null;
+  final_conversion_mom_unit: "ratio_change" | "percentage_point" | null;
+  stages: DimensionFunnelStage[];
+  best_improving_stage: StageMovement | null;
+  largest_declining_stage: StageMovement | null;
+  weakest_stage: {
+    from_metric_key: string;
+    from_label: string;
+    to_metric_key: string;
+    to_label: string;
+    current_conversion_rate: number;
+    peer_median_conversion_rate: number | null;
+    yoy_delta: number | null;
+    mom_delta: number | null;
+  } | null;
+  diagnosis_level: "high" | "medium" | "low";
+}
+
 export interface AggregateDiagnostic {
   diagnostic_type:
     | "high_traffic_low_conversion"
     | "high_conversion_low_traffic"
+    | "conversion_trend_improvement"
     | "yoy_decline"
     | "mom_decline"
+    | "stage_improvement"
+    | "stage_decline"
+    | "weakest_stage"
     | "funnel_dropoff"
     | "gmv_payment_mismatch";
   title: string;
@@ -245,6 +294,7 @@ export interface AggregateAnalysisResult {
     stages: AggregateFunnelStage[];
   };
   dimension_performance: DimensionPerformance[];
+  dimension_funnel_diagnostics: DimensionFunnelDiagnosis[];
   diagnostics: AggregateDiagnostic[];
   opportunities: AggregateOpportunity[];
 }
