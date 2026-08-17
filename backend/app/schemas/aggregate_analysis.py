@@ -244,6 +244,15 @@ class AggregateOpportunity(StrictSchema):
     metric_key: str
 
 
+class AggregateBusinessInsight(StrictSchema):
+    dimension_value: str
+    core_judgement: str
+    positive_signal: str | None
+    risk_signal: str | None
+    key_evidence: list[str]
+    priority: DiagnosticSeverity
+
+
 class AggregateAnalysisResponse(StrictSchema):
     dataset_type: Literal["aggregate_metrics"] = "aggregate_metrics"
     analysis_status: AnalysisStatus
@@ -260,3 +269,4 @@ class AggregateAnalysisResponse(StrictSchema):
     dimension_funnel_diagnostics: list[DimensionFunnelDiagnosis]
     diagnostics: list[AggregateDiagnostic]
     opportunities: list[AggregateOpportunity]
+    business_insights: list[AggregateBusinessInsight]

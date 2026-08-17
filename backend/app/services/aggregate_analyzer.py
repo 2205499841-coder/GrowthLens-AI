@@ -506,6 +506,12 @@ def analyze_aggregate_excel(
         parsed.number_formats,
     )
     opportunities = _build_opportunities(dimension_performance)
+    business_insights = _build_business_insights(
+        dimension_funnel_diagnostics,
+        diagnostics,
+        opportunities,
+        dimension_performance,
+    )
 
     recognized_column_count = len(
         {field.source_column for field in semantic_fields}
@@ -596,6 +602,7 @@ def analyze_aggregate_excel(
             "dimension_funnel_diagnostics": dimension_funnel_diagnostics,
             "diagnostics": diagnostics,
             "opportunities": opportunities,
+            "business_insights": business_insights,
         }
     )
 
@@ -2149,6 +2156,329 @@ def _build_opportunities(
             }
         )
     return opportunities
+
+
+def _build_business_insights(
+    dimension_funnels: list[dict[str, Any]],
+    diagnostics: list[dict[str, Any]],
+    opportunities: list[dict[str, Any]],
+    performance: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    diagnostics_by_dimension: dict[str, list[dict[str, Any]]] = {}
+    for diagnostic in diagnostics:
+        dimension_value = diagnostic.get("dimension_value")
+        if dimension_value:
+            diagnostics_by_dimension.setdefault(dimension_value, []).append(
+                diagnostic
+            )
+    opportunities_by_dimension: dict[str, list[dict[str, Any]]] = {}
+    for opportunity in opportunities:
+        opportunities_by_dimension.setdefault(
+            opportunity["dimension_value"],
+            [],
+        ).append(opportunity)
+    performance_lookup = {
+        item["dimension_value"]: item for item in performance
+    }
+
+    ranked_insights: list[tuple[float, dict[str, Any]]] = []
+    for summary in dimension_funnels:
+        dimension_value = summary["dimension_value"]
+        dimension_diagnostics = diagnostics_by_dimension.get(
+            dimension_value,
+            [],
+        )
+        dimension_opportunities = opportunities_by_dimension.get(
+            dimension_value,
+            [],
+        )
+        if not _has_meaningful_business_signal(
+            summary,
+            dimension_diagnostics,
+            dimension_opportunities,
+        ):
+            continue
+
+        positive_signal = _build_positive_signal(
+            summary,
+            dimension_diagnostics,
+            dimension_opportunities,
+        )
+        risk_signal = _build_risk_signal(
+            summary,
+            dimension_diagnostics,
+        )
+        priority = _resolve_business_insight_priority(
+            summary,
+            dimension_diagnostics,
+        )
+        evidence = _build_business_evidence(summary)
+        if not evidence:
+            evidence = [
+                item["evidence"]
+                for item in dimension_diagnostics[:2]
+                if item.get("evidence")
+            ]
+        core_judgement = _build_core_judgement(
+            summary,
+            positive_signal,
+            risk_signal,
+            dimension_diagnostics,
+            dimension_opportunities,
+        )
+        traffic = performance_lookup.get(dimension_value, {}).get(
+            "traffic_users"
+        )
+        rank_score = _business_insight_rank_score(
+            summary,
+            priority,
+            traffic,
+        )
+        ranked_insights.append(
+            (
+                rank_score,
+                {
+                    "dimension_value": dimension_value,
+                    "core_judgement": core_judgement,
+                    "positive_signal": positive_signal,
+                    "risk_signal": risk_signal,
+                    "key_evidence": evidence[:3],
+                    "priority": priority,
+                },
+            )
+        )
+
+    ranked_insights.sort(key=lambda item: item[0], reverse=True)
+    return [insight for _, insight in ranked_insights[:5]]
+
+
+def _has_meaningful_business_signal(
+    summary: dict[str, Any],
+    diagnostics: list[dict[str, Any]],
+    opportunities: list[dict[str, Any]],
+) -> bool:
+    final_movements = (
+        summary["final_conversion_yoy"],
+        summary["final_conversion_mom"],
+    )
+    return bool(
+        diagnostics
+        or opportunities
+        or summary["best_improving_stage"]
+        or summary["largest_declining_stage"]
+        or summary["weakest_stage"]
+        or any(
+            value is not None and abs(value) >= 0.02
+            for value in final_movements
+        )
+    )
+
+
+def _build_positive_signal(
+    summary: dict[str, Any],
+    diagnostics: list[dict[str, Any]],
+    opportunities: list[dict[str, Any]],
+) -> str | None:
+    improvement = summary["best_improving_stage"]
+    if improvement is not None:
+        period_label = (
+            "同比" if improvement["comparison"] == "yoy" else "环比"
+        )
+        return (
+            f"{_business_stage_label(improvement['from_label'])}→"
+            f"{_business_stage_label(improvement['to_label'])}"
+            f"{period_label}{_comparison_text(improvement['delta'], improvement['unit'])}"
+        )
+    for period_label, value, unit in (
+        (
+            "同比",
+            summary["final_conversion_yoy"],
+            summary["final_conversion_yoy_unit"],
+        ),
+        (
+            "环比",
+            summary["final_conversion_mom"],
+            summary["final_conversion_mom_unit"],
+        ),
+    ):
+        if value is not None and value >= 0.02:
+            return f"支付转化率{period_label}{_comparison_text(value, unit)}"
+    expansion = next(
+        (
+            item
+            for item in diagnostics
+            if item["diagnostic_type"] == "high_conversion_low_traffic"
+        ),
+        None,
+    )
+    if expansion is not None:
+        return expansion["title"]
+    if opportunities:
+        return opportunities[0]["title"]
+    return None
+
+
+def _build_risk_signal(
+    summary: dict[str, Any],
+    diagnostics: list[dict[str, Any]],
+) -> str | None:
+    decline = summary["largest_declining_stage"]
+    if decline is not None:
+        period_label = "同比" if decline["comparison"] == "yoy" else "环比"
+        return (
+            f"{_business_stage_label(decline['from_label'])}→"
+            f"{_business_stage_label(decline['to_label'])}"
+            f"{period_label}{_comparison_text(decline['delta'], decline['unit'])}"
+        )
+    weakest = summary["weakest_stage"]
+    if weakest is not None:
+        return (
+            f"{_business_stage_label(weakest['from_label'])}→"
+            f"{_business_stage_label(weakest['to_label'])}当前转化率"
+            f"{_percent_text(weakest['current_conversion_rate'])}"
+        )
+    high_traffic_risk = next(
+        (
+            item
+            for item in diagnostics
+            if item["diagnostic_type"] == "high_traffic_low_conversion"
+        ),
+        None,
+    )
+    return high_traffic_risk["title"] if high_traffic_risk else None
+
+
+def _build_core_judgement(
+    summary: dict[str, Any],
+    positive_signal: str | None,
+    risk_signal: str | None,
+    diagnostics: list[dict[str, Any]],
+    opportunities: list[dict[str, Any]],
+) -> str:
+    trend_text: str | None = None
+    for period_label, value in (
+        ("同比", summary["final_conversion_yoy"]),
+        ("环比", summary["final_conversion_mom"]),
+    ):
+        if value is None or abs(value) < 0.02:
+            continue
+        trend_text = (
+            f"整体支付转化{period_label}改善"
+            if value > 0
+            else f"整体支付转化{period_label}承压"
+        )
+        break
+    if trend_text and risk_signal:
+        return f"{trend_text}，但{_risk_subject(risk_signal)}仍需关注。"
+    if trend_text and positive_signal:
+        return f"{trend_text}，{_positive_subject(positive_signal)}是主要正向信号。"
+    if trend_text:
+        return f"{trend_text}。"
+    if risk_signal and positive_signal:
+        return (
+            f"{_positive_subject(positive_signal)}表现改善，但"
+            f"{_risk_subject(risk_signal)}仍需关注。"
+        )
+    if risk_signal:
+        return f"{_risk_subject(risk_signal)}是当前主要经营风险。"
+    if positive_signal:
+        return f"{_positive_subject(positive_signal)}是当前主要增长信号。"
+    if diagnostics:
+        return f"{diagnostics[0]['title']}。"
+    if opportunities:
+        return f"{opportunities[0]['title']}。"
+    return "当前可用数据尚未形成明显经营信号。"
+
+
+def _build_business_evidence(summary: dict[str, Any]) -> list[str]:
+    evidence: list[str] = []
+    final_rate = summary["final_conversion_rate"]
+    final_parts = []
+    if final_rate is not None:
+        final_parts.append(f"支付转化率 {_percent_text(final_rate)}")
+    for period_label, value, unit in (
+        (
+            "同比",
+            summary["final_conversion_yoy"],
+            summary["final_conversion_yoy_unit"],
+        ),
+        (
+            "环比",
+            summary["final_conversion_mom"],
+            summary["final_conversion_mom_unit"],
+        ),
+    ):
+        if value is not None:
+            final_parts.append(f"{period_label}{_comparison_text(value, unit)}")
+    if final_parts:
+        evidence.append("；".join(final_parts))
+    improvement = summary["best_improving_stage"]
+    if improvement is not None:
+        period_label = (
+            "同比" if improvement["comparison"] == "yoy" else "环比"
+        )
+        evidence.append(
+            f"最大改善：{_business_stage_label(improvement['from_label'])}→"
+            f"{_business_stage_label(improvement['to_label'])}"
+            f"{period_label}{_comparison_text(improvement['delta'], improvement['unit'])}"
+        )
+    decline = summary["largest_declining_stage"]
+    if decline is not None:
+        period_label = "同比" if decline["comparison"] == "yoy" else "环比"
+        evidence.append(
+            f"最大拖累：{_business_stage_label(decline['from_label'])}→"
+            f"{_business_stage_label(decline['to_label'])}"
+            f"{period_label}{_comparison_text(decline['delta'], decline['unit'])}"
+        )
+    return evidence
+
+
+def _resolve_business_insight_priority(
+    summary: dict[str, Any],
+    diagnostics: list[dict[str, Any]],
+) -> str:
+    severity_order = {"low": 1, "medium": 2, "high": 3}
+    levels = [summary["diagnosis_level"]] + [
+        item["severity"] for item in diagnostics
+    ]
+    return max(levels, key=lambda item: severity_order[item])
+
+
+def _business_insight_rank_score(
+    summary: dict[str, Any],
+    priority: str,
+    traffic: int | None,
+) -> float:
+    priority_score = {"low": 100, "medium": 200, "high": 300}[priority]
+    changes = [
+        abs(value)
+        for value in (
+            summary["final_conversion_yoy"],
+            summary["final_conversion_mom"],
+            (
+                summary["best_improving_stage"]["delta"]
+                if summary["best_improving_stage"]
+                else None
+            ),
+            (
+                summary["largest_declining_stage"]["delta"]
+                if summary["largest_declining_stage"]
+                else None
+            ),
+        )
+        if value is not None
+    ]
+    movement_score = max(changes, default=0) * 100
+    scale_score = math.log10(max(traffic or 1, 1))
+    return priority_score + movement_score + scale_score
+
+
+def _risk_subject(signal: str) -> str:
+    return re.split(r"同比|环比|当前转化率", signal, maxsplit=1)[0]
+
+
+def _positive_subject(signal: str) -> str:
+    return re.split(r"同比|环比", signal, maxsplit=1)[0]
 
 
 def _resolve_row_comparison(

@@ -10,10 +10,9 @@ import {
 } from "@/lib/formatters";
 import type {
   AggregateAnalysisResult,
-  AggregateDiagnostic,
+  AggregateBusinessInsight,
   AggregateFunnelStage,
   AggregateKpi,
-  AggregateOpportunity,
   DimensionFunnelDiagnosis,
   DimensionPerformance,
 } from "@/types/analysis";
@@ -97,12 +96,9 @@ export function AggregateDashboard({
       <AggregateSection
         eyebrow="Business insights"
         title="重点经营洞察"
-        description="每个维度最多保留两条高信号结论，避免重复提示。"
+        description="将同一维度的趋势、正向节点与风险信号合并，每个维度仅保留一条结论。"
       >
-        <BusinessInsights
-          diagnostics={result.diagnostics}
-          opportunities={result.opportunities}
-        />
+        <BusinessInsights insights={result.business_insights} />
       </AggregateSection>
     </div>
   );
@@ -317,34 +313,10 @@ function CategoryDiagnosisTable({
 
 
 function BusinessInsights({
-  diagnostics,
-  opportunities,
+  insights,
 }: {
-  diagnostics: AggregateDiagnostic[];
-  opportunities: AggregateOpportunity[];
+  insights: AggregateBusinessInsight[];
 }) {
-  const counts = new Map<string, number>();
-  const insights = diagnostics.map((item) => {
-    const dimension = item.dimension_value ?? "整体";
-    counts.set(dimension, (counts.get(dimension) ?? 0) + 1);
-    return {
-      dimension,
-      title: item.title,
-      evidence: item.evidence,
-      severity: item.severity,
-    };
-  });
-  for (const item of opportunities) {
-    const currentCount = counts.get(item.dimension_value) ?? 0;
-    if (currentCount >= 2) continue;
-    insights.push({
-      dimension: item.dimension_value,
-      title: item.title,
-      evidence: item.evidence,
-      severity: "low",
-    });
-    counts.set(item.dimension_value, currentCount + 1);
-  }
   if (!insights.length) {
     return <EmptyPanel text="当前数据未达到高信号经营洞察的触发阈值。" />;
   }
@@ -354,21 +326,31 @@ function BusinessInsights({
         <table className="business-insights-table">
           <thead>
             <tr>
-              <th>维度</th>
-              <th>结论</th>
-              <th>数据证据</th>
+              <th>品类</th>
+              <th>核心判断</th>
+              <th>正向信号</th>
+              <th>风险 / 拖累</th>
+              <th>关键证据</th>
               <th>优先级</th>
             </tr>
           </thead>
           <tbody>
             {insights.map((item, index) => (
-              <tr key={`${item.dimension}-${item.title}-${index}`}>
-                <td><strong>{item.dimension}</strong></td>
-                <td>{item.title}</td>
-                <td className="insight-evidence-cell">{item.evidence}</td>
+              <tr key={`${item.dimension_value}-${index}`}>
+                <td><strong>{item.dimension_value}</strong></td>
+                <td className="insight-judgement-cell">{item.core_judgement}</td>
+                <td>{item.positive_signal ?? "—"}</td>
+                <td>{item.risk_signal ?? "—"}</td>
+                <td className="insight-evidence-cell">
+                  <ul>
+                    {item.key_evidence.map((evidence) => (
+                      <li key={evidence}>{evidence}</li>
+                    ))}
+                  </ul>
+                </td>
                 <td>
-                  <span className={`diagnosis-level level-${item.severity}`}>
-                    {severityLabel(item.severity)}
+                  <span className={`diagnosis-level level-${item.priority}`}>
+                    {severityLabel(item.priority)}
                   </span>
                 </td>
               </tr>

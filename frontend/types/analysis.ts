@@ -223,6 +223,15 @@ export interface AggregateOpportunity {
   metric_key: string;
 }
 
+export interface AggregateBusinessInsight {
+  dimension_value: string;
+  core_judgement: string;
+  positive_signal: string | null;
+  risk_signal: string | null;
+  key_evidence: string[];
+  priority: "high" | "medium" | "low";
+}
+
 export interface AggregateAnalysisResult {
   dataset_type: "aggregate_metrics";
   analysis_status: "ready" | "partial";
@@ -297,6 +306,7 @@ export interface AggregateAnalysisResult {
   dimension_funnel_diagnostics: DimensionFunnelDiagnosis[];
   diagnostics: AggregateDiagnostic[];
   opportunities: AggregateOpportunity[];
+  business_insights: AggregateBusinessInsight[];
 }
 
 export interface DatasetPlaceholderResult {

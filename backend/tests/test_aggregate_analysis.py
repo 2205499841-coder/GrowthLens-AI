@@ -481,3 +481,80 @@ def test_each_dimension_has_at_most_two_nonduplicate_diagnostics() -> None:
 
     assert len(diagnostics) <= 2
     assert len({item.title for item in diagnostics}) == len(diagnostics)
+
+
+def test_business_signals_are_merged_into_one_insight_per_dimension() -> None:
+    content = _workbook_bytes(
+        _diagnostic_headers(),
+        [
+            [
+                "儿童写真",
+                1000,
+                800,
+                400,
+                300,
+                250,
+                200,
+                150,
+                0.0271,
+                0.01,
+                0.02,
+                -0.0742,
+                0.2463,
+                0.03,
+                0.01,
+                0.02,
+            ]
+        ],
+        percent_columns=tuple(range(9, 17)),
+    )
+    result = _analyze(content)
+
+    assert len(result.business_insights) == 1
+    insight = result.business_insights[0]
+    assert insight.dimension_value == "儿童写真"
+    assert "整体支付转化同比改善" in insight.core_judgement
+    assert "商详→预约" in insight.core_judgement
+    assert insight.positive_signal is not None
+    assert "预约→SKU 选择" in insight.positive_signal
+    assert insight.risk_signal is not None
+    assert "商详→预约" in insight.risk_signal
+    assert any("支付转化率" in item for item in insight.key_evidence)
+    assert insight.priority == "high"
+
+
+def test_business_insights_are_unique_and_limited_to_five() -> None:
+    rows = []
+    for index in range(7):
+        rows.append(
+            [
+                f"品类{index + 1}",
+                1000 + index * 100,
+                800,
+                400,
+                300,
+                250,
+                200,
+                150,
+                0.02 + index * 0.01,
+                0.01,
+                0.02,
+                -0.03 - index * 0.005,
+                0.04 + index * 0.01,
+                0.03,
+                0.01,
+                0.02,
+            ]
+        )
+    content = _workbook_bytes(
+        _diagnostic_headers(),
+        rows,
+        percent_columns=tuple(range(9, 17)),
+    )
+    result = _analyze(content)
+
+    assert len(result.business_insights) == 5
+    assert len(
+        {item.dimension_value for item in result.business_insights}
+    ) == 5
+    assert result.business_insights[0].dimension_value == "品类7"

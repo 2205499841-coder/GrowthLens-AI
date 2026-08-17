@@ -1457,7 +1457,7 @@ tbody tr:hover {
 
 .diagnosis-summary-table,
 .business-insights-table {
-  min-width: 980px;
+  min-width: 1180px;
 }
 
 .diagnosis-summary-table th,
@@ -1500,6 +1500,22 @@ tbody tr:hover {
   line-height: 1.55;
   min-width: 320px;
   white-space: normal;
+}
+
+.insight-judgement-cell {
+  font-weight: 650;
+  line-height: 1.6;
+  min-width: 270px;
+  white-space: normal;
+}
+
+.insight-evidence-cell ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.insight-evidence-cell li + li {
+  margin-top: 4px;
 }
 
 .aggregate-signal-grid {
