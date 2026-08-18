@@ -2,15 +2,15 @@
 
 ## MVP 边界
 
-AI 报告模块不读取 Excel 文件或用户明细，只接收后端已经完成的数据理解
-上下文与聚合结果：
+AI 报告模块不读取 Excel 文件或原始业务明细，只接收后端已经完成的
+结构化分析结果。
 
-- `analysis_context`
-- `schema_mapping`
-- `data_quality`
-- `metrics`
-- `funnel`
-- `channels`
+- `user_level`：数据质量、增长指标、用户漏斗和渠道表现；
+- `aggregate_metrics`：报表周期、筛选条件、维度表现、维度漏斗诊断、
+  重点经营洞察、异常和数据限制。
+
+聚合经营上下文最多保留优先级最高或流量最大的 20 个维度值，不包含
+文件名、Sheet、源字段和完整 Excel 内容。
 
 接口为 `POST /api/ai/report`。请求出现额外的原始数据字段时会返回 422。
 
@@ -18,19 +18,23 @@ AI 报告模块不读取 Excel 文件或用户明细，只接收后端已经完�
 
 报告使用固定结构输出：
 
-- `summary`：一句话业务诊断；
-- `key_findings`：2-3 条问题诊断，每条包含问题、证据和对应建议；
-- `channel_strategy`：基于真实渠道表现差异生成差异化策略；
-- `growth_actions`：2-3 条行动建议、目标指标和预期方向；
+- `core_conclusion`：一段核心业务结论；
+- `key_issues`：最多 3 条重点问题、证据、影响和置信度；
+- `priority_actions`：最多 3 条建议动作、适用对象、原因和目标指标；
+- `opportunities`：最多 2 条增长机会；
+- `limitations`：数据限制。
+
+每条证据必须携带 `evidence_ref`。模型输出后，服务端会检查引用是否存在、
+数字是否来自证据目录，以及百分比和百分点是否沿用原单位。
 
 ## Prompt 设计
 
 System Prompt 将角色、任务、格式与事实约束分开定义，核心规则为：
 
-1. 用 `analysis_context` 确定分析类型和优先指标；
-2. 用 `schema_mapping` 理解字段语义，不读取原始数据；
-3. 只使用 `metrics`、`funnel`、`channels` 中的结果作为诊断事实；
-4. evidence 中的数字必须来自输入；
+1. 优先使用后端已经生成的结构化经营洞察；
+2. 不重新计算或修改任何指标；
+3. 只复制 `evidence_catalog` 中的数字与显示单位；
+4. evidence 必须引用真实 `evidence_ref`；
 5. 不补充渠道、用户画像、行业基准或业务事件；
 6. 不把原因假设写成事实；
 7. 不声称读取过 Excel 原始数据。
@@ -54,8 +58,7 @@ response_format={"type": "json_object"}
 ```
 
 System Prompt 同时包含 JSON 字段示例，并要求模型不输出 Markdown 或额外
-说明。模型响应还会经过 `AIReportResponse` 校验，并检查渠道名称是否来自
-输入数据。
+说明。模型响应还会经过 `AIReportResponse`、证据引用和数字单位校验。
 
 默认环境变量：
 

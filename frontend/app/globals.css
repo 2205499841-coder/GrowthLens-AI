@@ -1005,8 +1005,16 @@ tbody tr:hover {
 }
 
 .ai-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   margin-bottom: 12px;
   margin-top: 0;
+}
+
+.ai-feedback span {
+  font-size: 11px;
+  opacity: 0.82;
 }
 
 .ai-report-placeholder,
@@ -1248,6 +1256,14 @@ tbody tr:hover {
   color: #46536a;
 }
 
+.ai-evidence-list {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.65;
+  margin: 7px 0 0;
+  padding-left: 17px;
+}
+
 .ai-report-columns {
   border-top: 1px solid var(--border);
   display: grid;
@@ -1359,6 +1375,13 @@ tbody tr:hover {
   margin: 0;
 }
 
+.action-reason {
+  color: var(--subtle);
+  font-size: 10px;
+  line-height: 1.55;
+  margin-top: 6px;
+}
+
 .action-meta {
   align-items: center;
   display: flex;
@@ -1396,15 +1419,10 @@ tbody tr:hover {
   font-size: 11px;
 }
 
-.ai-limitations ul {
+.ai-limitations span {
   color: var(--subtle);
-  display: grid;
   font-size: 10px;
-  gap: 7px 24px;
-  grid-template-columns: 1fr 1fr;
   line-height: 1.55;
-  margin: 0;
-  padding-left: 16px;
 }
 
 .aggregate-quality-notice {
@@ -1887,10 +1905,6 @@ tbody tr:hover {
     gap: 10px;
     grid-template-columns: 1fr;
     padding: 18px 20px;
-  }
-
-  .ai-limitations ul {
-    grid-template-columns: 1fr;
   }
 
   .app-footer {

@@ -22,19 +22,19 @@ POST http://localhost:8000/api/analysis/growth
 ```
 
 页面根据 `dataset_type` 展示可用结果。当前完整支持用户级数据质量、
-核心指标、用户漏斗、渠道对比和统一 AI 增长诊断；聚合经营报表已具备
-类型识别与占位状态，暂不计算完整经营指标。
+核心指标、用户漏斗、渠道对比和统一 AI 增长诊断；聚合经营报表支持
+动态漏斗、维度诊断、重点经营洞察和异步 AI 增长诊断。
 前端不重复计算业务指标。
 
-AI 报告由用户在 Dashboard 主动触发，调用：
+用户级报告可在 Dashboard 主动触发；聚合经营分析完成后会异步生成，调用：
 
 ```text
 POST http://localhost:8000/api/ai/report
 ```
 
-页面将 `analysis_context`、`schema_mapping` 与聚合指标交给后端 Provider
-生成业务诊断，默认 Provider 为 DeepSeek；前端不持有 API Key，也不直接
-调用模型服务。
+页面只把后端已验证的结构化分析结果交给报告接口。Dashboard 不依赖 AI
+请求成功；失败时保留分析结果并提供重新生成入口。前端不持有 API Key，
+也不直接调用模型服务。
 
 ## 检查
 

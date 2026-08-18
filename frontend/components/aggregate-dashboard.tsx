@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { AIReportSection } from "@/components/ai-report-section";
 import {
   formatCurrency,
   formatCurrencyPrecise,
@@ -28,6 +29,16 @@ export function AggregateDashboard({
 
   return (
     <div className="dashboard-content aggregate-dashboard">
+      <AIReportSection
+        analysis={result}
+        autoGenerate
+        key={[
+          result.metadata.file_name,
+          result.dataset.report_period,
+          result.data_quality.row_count,
+        ].join("-")}
+      />
+
       {result.analysis_status === "partial" ? (
         <div className="aggregate-quality-notice">
           <strong>已生成部分可用分析</strong>

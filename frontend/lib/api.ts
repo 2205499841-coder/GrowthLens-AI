@@ -1,4 +1,5 @@
 import type {
+  AggregateAnalysisResult,
   AnalysisResult,
   GrowthAnalysisResult,
 } from "@/types/analysis";
@@ -69,37 +70,45 @@ export async function analyzeGrowth(
 }
 
 export async function generateAIReport(
-  result: GrowthAnalysisResult,
+  result: GrowthAnalysisResult | AggregateAnalysisResult,
 ): Promise<AIReport> {
+  const requestBody =
+    result.dataset_type === "aggregate_metrics"
+      ? {
+          dataset_type: "aggregate_metrics",
+          aggregate_analysis: result,
+        }
+      : {
+          dataset_type: "user_level",
+          analysis_context: result.analysis_context ?? {
+            analysis_type: "user_growth",
+            business_type: "general",
+            recommended_metrics: [
+              "注册用户数",
+              "浏览率",
+              "留资率",
+              "预约率",
+              "到店率",
+              "成交率",
+              "GMV",
+              "客单价",
+            ],
+          },
+          schema_mapping: result.schema_mapping ?? {
+            mapping: result.data_ingestion.field_mapping,
+            source: "fixed",
+          },
+          data_quality: result.data_quality,
+          metrics: result.metrics,
+          funnel: result.funnel,
+          channels: result.channels,
+        };
   const response = await fetch(`${API_BASE_URL}/api/ai/report`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      analysis_context: result.analysis_context ?? {
-        analysis_type: "user_growth",
-        business_type: "general",
-        recommended_metrics: [
-          "注册用户数",
-          "浏览率",
-          "留资率",
-          "预约率",
-          "到店率",
-          "成交率",
-          "GMV",
-          "客单价",
-        ],
-      },
-      schema_mapping: result.schema_mapping ?? {
-        mapping: result.data_ingestion.field_mapping,
-        source: "fixed",
-      },
-      data_quality: result.data_quality,
-      metrics: result.metrics,
-      funnel: result.funnel,
-      channels: result.channels,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {

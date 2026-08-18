@@ -1,26 +1,34 @@
-export type ExpectedDirection = "increase" | "decrease" | "maintain";
+export type ConfidenceLevel = "high" | "medium" | "low";
 
-export interface KeyFinding {
+export interface ReportEvidence {
+  text: string;
+  evidence_ref: string[];
+}
+
+export interface KeyIssue {
   issue: string;
-  evidence: string;
+  evidence: ReportEvidence[];
+  impact: string;
+  confidence: ConfidenceLevel;
+}
+
+export interface PriorityAction {
+  action: string;
+  applicable_to: string;
+  reason: string;
+  target_metric: string;
+}
+
+export interface GrowthOpportunity {
+  target: string;
+  evidence: ReportEvidence[];
   recommendation: string;
 }
 
-export interface ChannelStrategy {
-  channel: string;
-  diagnosis: string;
-  strategy: string;
-}
-
-export interface GrowthAction {
-  action: string;
-  target_metric: string;
-  expected_direction: ExpectedDirection;
-}
-
 export interface AIReport {
-  summary: string;
-  key_findings: KeyFinding[];
-  channel_strategy: ChannelStrategy[];
-  growth_actions: GrowthAction[];
+  core_conclusion: string;
+  key_issues: KeyIssue[];
+  priority_actions: PriorityAction[];
+  opportunities: GrowthOpportunity[];
+  limitations: string[];
 }
