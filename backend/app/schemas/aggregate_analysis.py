@@ -31,6 +31,12 @@ ComparisonType = Literal[
     "percentage_point_change",
 ]
 DiagnosticSeverity = Literal["high", "medium", "low"]
+DimensionDiagnosisLevel = Literal[
+    "high_priority",
+    "attention",
+    "stable",
+    "improving",
+]
 
 
 class StrictSchema(BaseModel):
@@ -68,6 +74,7 @@ class MetricDefinition(StrictSchema):
     unit: MetricUnit
     aggregation: AggregationType
     confidence: ConfidenceLevel
+    semantic_role: Literal["funnel_stage", "outcome_metric"]
 
 
 class FunnelStageDefinition(StrictSchema):
@@ -137,6 +144,13 @@ class AggregateFunnel(StrictSchema):
     stages: list[AggregateFunnelStage]
 
 
+class SupplementalOutcomeMetric(StrictSchema):
+    metric_key: str
+    label: str
+    value: int | float
+    unit: MetricUnit
+
+
 class DimensionPerformance(StrictSchema):
     dimension_value: str
     traffic_users: int | None
@@ -157,6 +171,7 @@ class DimensionPerformance(StrictSchema):
         "percentage_point",
         "absolute_change",
     ] | None
+    supplemental_outcomes: list[SupplementalOutcomeMetric]
 
 
 class DimensionFunnelStage(StrictSchema):
@@ -209,7 +224,7 @@ class DimensionFunnelDiagnosis(StrictSchema):
     best_improving_stage: StageMovement | None
     largest_declining_stage: StageMovement | None
     weakest_stage: WeakestStage | None
-    diagnosis_level: DiagnosticSeverity
+    diagnosis_level: DimensionDiagnosisLevel
 
 
 class AggregateDiagnostic(StrictSchema):
@@ -250,7 +265,7 @@ class AggregateBusinessInsight(StrictSchema):
     positive_signal: str | None
     risk_signal: str | None
     key_evidence: list[str]
-    priority: DiagnosticSeverity
+    priority: DimensionDiagnosisLevel
 
 
 class AggregateAnalysisResponse(StrictSchema):

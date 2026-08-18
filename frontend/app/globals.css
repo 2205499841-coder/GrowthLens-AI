@@ -1457,7 +1457,7 @@ tbody tr:hover {
 
 .diagnosis-summary-table,
 .business-insights-table {
-  min-width: 1180px;
+  min-width: 920px;
 }
 
 .diagnosis-summary-table th,
@@ -1480,19 +1480,24 @@ tbody tr:hover {
   padding: 5px 8px;
 }
 
-.diagnosis-level.level-high {
+.diagnosis-level.level-high_priority {
   background: #fff0ee;
   color: var(--danger);
 }
 
-.diagnosis-level.level-medium {
+.diagnosis-level.level-attention {
   background: var(--accent-soft);
   color: #8a651f;
 }
 
-.diagnosis-level.level-low {
+.diagnosis-level.level-stable {
   background: #edf5f2;
   color: var(--success);
+}
+
+.diagnosis-level.level-improving {
+  background: #eaf1ff;
+  color: var(--brand-deep);
 }
 
 .insight-evidence-cell {

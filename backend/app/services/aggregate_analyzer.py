@@ -73,13 +73,22 @@ class _MetricRule:
     unit: str
     aggregation: str
     stage_order: int | None = None
+    semantic_role: str = "outcome_metric"
 
 
 METRIC_RULES = (
     _MetricRule(
+        "all_channel_payment_users",
+        "全域支付用户",
+        ("全域支付用户数", "全域支付人数", "全渠道支付用户数"),
+        "count_metric",
+        "count",
+        "non_additive",
+    ),
+    _MetricRule(
         "online_payment_users",
         "线上支付用户",
-        ("线上支付用户数", "线上支付人数"),
+        ("线上支付用户数", "线上支付人数", "线上支付用户"),
         "count_metric",
         "count",
         "non_additive",
@@ -87,7 +96,12 @@ METRIC_RULES = (
     _MetricRule(
         "store_payment_users",
         "门店支付用户",
-        ("门店签到支付用户数", "门店支付用户数", "到店支付用户数"),
+        (
+            "门店签到支付用户数",
+            "门店签到支付用户",
+            "门店支付用户数",
+            "到店支付用户数",
+        ),
         "count_metric",
         "count",
         "non_additive",
@@ -109,6 +123,7 @@ METRIC_RULES = (
         "count",
         "non_additive",
         10,
+        "funnel_stage",
     ),
     _MetricRule(
         "product_detail_users",
@@ -123,6 +138,7 @@ METRIC_RULES = (
         "count",
         "non_additive",
         20,
+        "funnel_stage",
     ),
     _MetricRule(
         "lead_users",
@@ -132,6 +148,7 @@ METRIC_RULES = (
         "count",
         "non_additive",
         25,
+        "funnel_stage",
     ),
     _MetricRule(
         "appointment_users",
@@ -141,6 +158,7 @@ METRIC_RULES = (
         "count",
         "non_additive",
         30,
+        "funnel_stage",
     ),
     _MetricRule(
         "sku_selection_users",
@@ -150,6 +168,7 @@ METRIC_RULES = (
         "count",
         "non_additive",
         40,
+        "funnel_stage",
     ),
     _MetricRule(
         "time_confirmation_users",
@@ -159,6 +178,7 @@ METRIC_RULES = (
         "count",
         "non_additive",
         50,
+        "funnel_stage",
     ),
     _MetricRule(
         "order_submission_users",
@@ -168,6 +188,7 @@ METRIC_RULES = (
         "count",
         "non_additive",
         60,
+        "funnel_stage",
     ),
     _MetricRule(
         "visit_users",
@@ -177,12 +198,12 @@ METRIC_RULES = (
         "count",
         "non_additive",
         70,
+        "funnel_stage",
     ),
     _MetricRule(
         "payment_users",
         "支付用户",
         (
-            "全域支付用户数",
             "支付用户数",
             "支付人数",
             "成交用户数",
@@ -192,6 +213,7 @@ METRIC_RULES = (
         "count",
         "non_additive",
         80,
+        "funnel_stage",
     ),
     _MetricRule(
         "traffic_to_detail_rate",
@@ -383,6 +405,7 @@ class _SemanticField:
     aggregation: str
     confidence: str
     stage_order: int | None = None
+    semantic_role: str = "outcome_metric"
     comparison_type: str | None = None
     comparison_period: str | None = None
     comparison_unit: str | None = None
@@ -435,15 +458,7 @@ def analyze_aggregate_excel(
     comparisons = [
         field for field in metrics if field.role == "comparison_metric"
     ]
-    funnel_definitions = sorted(
-        (
-            field
-            for field in business_metrics
-            if field.stage_order is not None
-            and field.confidence != "low"
-        ),
-        key=lambda field: field.stage_order or 0,
-    )
+    funnel_definitions = _build_funnel_definitions(business_metrics)
 
     primary_dimension = dimensions[0] if dimensions else None
     total_rows, detail_rows = _split_total_and_detail_rows(
@@ -482,6 +497,7 @@ def analyze_aggregate_excel(
         metric_lookup,
         comparison_lookup,
         parsed.number_formats,
+        dimension_performance,
     )
     _apply_final_comparisons_to_performance(
         dimension_performance,
@@ -562,6 +578,7 @@ def analyze_aggregate_excel(
                     "unit": field.unit,
                     "aggregation": field.aggregation,
                     "confidence": field.confidence,
+                    "semantic_role": field.semantic_role,
                 }
                 for field in metrics
             ],
@@ -915,6 +932,7 @@ def _recognize_metric(profile: _ColumnProfile) -> _SemanticField | None:
                 aggregation=rule.aggregation,
                 confidence="high",
                 stage_order=rule.stage_order,
+                semantic_role=rule.semantic_role,
             )
     if profile.percentage_format and profile.inferred_type == "numeric":
         return _SemanticField(
@@ -1113,6 +1131,7 @@ def _validated_ai_fields(
                     aggregation=rule.aggregation,
                     confidence=confidence,
                     stage_order=rule.stage_order,
+                    semantic_role=rule.semantic_role,
                 )
             )
         used_sources.add(source_column)
@@ -1162,6 +1181,46 @@ def _deduplicate_metrics(
         ]:
             lookup[metric.semantic_key] = metric
     return lookup
+
+
+def _build_funnel_definitions(
+    metrics: list[_SemanticField],
+) -> list[_SemanticField]:
+    """Select exactly one canonical metric for each business funnel stage."""
+    selected_by_order: dict[int, _SemanticField] = {}
+    used_semantic_keys: set[str] = set()
+    candidates = [
+        metric
+        for metric in metrics
+        if metric.semantic_role == "funnel_stage"
+        and metric.stage_order is not None
+        and metric.confidence != "low"
+    ]
+    candidates.sort(key=_funnel_candidate_score, reverse=True)
+    for metric in candidates:
+        stage_order = metric.stage_order
+        if (
+            stage_order is None
+            or stage_order in selected_by_order
+            or metric.semantic_key in used_semantic_keys
+        ):
+            continue
+        selected_by_order[stage_order] = metric
+        used_semantic_keys.add(metric.semantic_key)
+    return [selected_by_order[key] for key in sorted(selected_by_order)]
+
+
+def _funnel_candidate_score(field: _SemanticField) -> tuple[int, int, int]:
+    confidence_score = {"high": 3, "medium": 2, "low": 1}[field.confidence]
+    rule = _metric_rule(field.semantic_key)
+    normalized_source = _normalize(field.source_column)
+    alias_score = 0
+    for index, alias in enumerate(rule.aliases):
+        if normalized_source == _normalize(alias):
+            alias_score = len(rule.aliases) - index
+            break
+    main_payment_score = 1 if field.semantic_key == "payment_users" else 0
+    return confidence_score, alias_score, main_payment_score
 
 
 def _group_comparisons(
@@ -1323,9 +1382,40 @@ def _build_dimension_performance(
                 "mom": mom,
                 "yoy_unit": yoy_unit,
                 "mom_unit": mom_unit,
+                "supplemental_outcomes": _build_supplemental_outcomes(
+                    row,
+                    metric_lookup,
+                    number_formats,
+                ),
             }
         )
     return performance
+
+
+def _build_supplemental_outcomes(
+    row: pd.Series,
+    metric_lookup: dict[str, _SemanticField],
+    number_formats: dict[str, tuple[str, ...]],
+) -> list[dict[str, Any]]:
+    outcomes: list[dict[str, Any]] = []
+    for metric in metric_lookup.values():
+        if (
+            metric.semantic_role != "outcome_metric"
+            or metric.role != "count_metric"
+        ):
+            continue
+        value = _metric_value(row, metric, number_formats)
+        if value is None:
+            continue
+        outcomes.append(
+            {
+                "metric_key": metric.semantic_key,
+                "label": metric.label,
+                "value": value,
+                "unit": metric.unit,
+            }
+        )
+    return outcomes
 
 
 def _build_dynamic_funnel(
@@ -1350,7 +1440,10 @@ def _build_dynamic_funnel(
         scope_value = None
     stages: list[dict[str, Any]] = []
     previous_count: int | None = None
+    previous_semantic_key: str | None = None
     for definition in funnel_definitions:
+        if definition.semantic_key == previous_semantic_key:
+            continue
         value = _metric_value(scope_row, definition, number_formats)
         current_count = _as_int(value)
         if current_count is None:
@@ -1400,6 +1493,7 @@ def _build_dynamic_funnel(
             }
         )
         previous_count = current_count
+        previous_semantic_key = definition.semantic_key
     return {"scope_dimension_value": scope_value, "stages": stages}, warnings
 
 
@@ -1413,6 +1507,7 @@ def _build_dimension_funnel_diagnostics(
         list[_SemanticField],
     ],
     number_formats: dict[str, tuple[str, ...]],
+    dimension_performance: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     if primary_dimension is None:
         return []
@@ -1474,11 +1569,20 @@ def _build_dimension_funnel_diagnostics(
                     direction="negative",
                 ),
                 "weakest_stage": None,
-                "diagnosis_level": "low",
+                "diagnosis_level": "stable",
             }
         )
 
     peer_rates: dict[tuple[str, str], list[float]] = {}
+    performance_lookup = {
+        item["dimension_value"]: item for item in dimension_performance
+    }
+    traffic_median = _median_optional(
+        item["traffic_users"] for item in dimension_performance
+    )
+    payment_median = _median_optional(
+        item["payment_users"] for item in dimension_performance
+    )
     for summary in summaries:
         for stage in summary["stages"]:
             current_rate = stage["current_conversion_rate"]
@@ -1493,7 +1597,10 @@ def _build_dimension_funnel_diagnostics(
             peer_rates,
         )
         summary["diagnosis_level"] = _resolve_dimension_diagnosis_level(
-            summary
+            summary,
+            performance_lookup.get(summary["dimension_value"], {}),
+            traffic_median=traffic_median,
+            payment_median=payment_median,
         )
     return summaries
 
@@ -1509,16 +1616,25 @@ def _build_row_funnel_stages(
     number_formats: dict[str, tuple[str, ...]],
 ) -> list[dict[str, Any]]:
     available_stages: list[tuple[_SemanticField, int]] = []
+    used_semantic_keys: set[str] = set()
     for definition in funnel_definitions:
+        if definition.semantic_key in used_semantic_keys:
+            continue
         count = _as_int(_metric_value(row, definition, number_formats))
         if count is not None:
             available_stages.append((definition, count))
+            used_semantic_keys.add(definition.semantic_key)
 
     stages: list[dict[str, Any]] = []
     for (from_stage, from_count), (to_stage, to_count) in zip(
         available_stages,
         available_stages[1:],
     ):
+        if (
+            from_stage.semantic_key == to_stage.semantic_key
+            or from_stage.stage_order == to_stage.stage_order
+        ):
+            continue
         rate_metric_key = FUNNEL_RATE_KEYS.get(
             (from_stage.semantic_key, to_stage.semantic_key)
         )
@@ -1791,31 +1907,69 @@ def _select_weakest_stage(
     }
 
 
-def _resolve_dimension_diagnosis_level(summary: dict[str, Any]) -> str:
-    movements = [
-        abs(value)
+def _resolve_dimension_diagnosis_level(
+    summary: dict[str, Any],
+    performance: dict[str, Any],
+    *,
+    traffic_median: float | None,
+    payment_median: float | None,
+) -> str:
+    final_changes = [
+        value
         for value in (
             summary["final_conversion_yoy"],
             summary["final_conversion_mom"],
-            (
-                summary["best_improving_stage"]["delta"]
-                if summary["best_improving_stage"]
-                else None
-            ),
-            (
-                summary["largest_declining_stage"]["delta"]
-                if summary["largest_declining_stage"]
-                else None
-            ),
         )
         if value is not None
     ]
-    maximum = max(movements, default=0)
-    if maximum >= 0.1:
-        return "high"
-    if maximum >= 0.05 or summary["weakest_stage"] is not None:
-        return "medium"
-    return "low"
+    stage_decline = (
+        summary["largest_declining_stage"]["delta"]
+        if summary["largest_declining_stage"]
+        else None
+    )
+    stage_improvement = (
+        summary["best_improving_stage"]["delta"]
+        if summary["best_improving_stage"]
+        else None
+    )
+    negative_magnitude = abs(
+        min([0.0, *final_changes, stage_decline or 0.0])
+    )
+    positive_magnitude = max(
+        [0.0, *final_changes, stage_improvement or 0.0]
+    )
+    traffic = performance.get("traffic_users")
+    payment = performance.get("payment_users")
+    material_scale = bool(
+        (
+            traffic is not None
+            and traffic_median is not None
+            and traffic >= traffic_median
+        )
+        or (
+            payment is not None
+            and payment_median is not None
+            and payment >= payment_median
+        )
+    )
+
+    if negative_magnitude >= 0.1 or (
+        negative_magnitude >= 0.06 and material_scale
+    ):
+        return "high_priority"
+    if negative_magnitude >= 0.03 or (
+        summary["weakest_stage"] is not None
+        and negative_magnitude >= 0.02
+    ):
+        return "attention"
+    if positive_magnitude >= 0.05:
+        return "improving"
+    return "stable"
+
+
+def _median_optional(values: Iterable[int | float | None]) -> float | None:
+    usable_values = [float(value) for value in values if value is not None]
+    return float(median(usable_values)) if usable_values else None
 
 
 def _apply_final_comparisons_to_performance(
@@ -2208,10 +2362,7 @@ def _build_business_insights(
             summary,
             dimension_diagnostics,
         )
-        priority = _resolve_business_insight_priority(
-            summary,
-            dimension_diagnostics,
-        )
+        priority = _resolve_business_insight_priority(summary)
         evidence = _build_business_evidence(summary)
         if not evidence:
             evidence = [
@@ -2242,7 +2393,7 @@ def _build_business_insights(
                     "core_judgement": core_judgement,
                     "positive_signal": positive_signal,
                     "risk_signal": risk_signal,
-                    "key_evidence": evidence[:3],
+                    "key_evidence": evidence[:2],
                     "priority": priority,
                 },
             )
@@ -2412,6 +2563,14 @@ def _build_business_evidence(summary: dict[str, Any]) -> list[str]:
             final_parts.append(f"{period_label}{_comparison_text(value, unit)}")
     if final_parts:
         evidence.append("；".join(final_parts))
+    decline = summary["largest_declining_stage"]
+    if decline is not None:
+        period_label = "同比" if decline["comparison"] == "yoy" else "环比"
+        evidence.append(
+            f"最大拖累：{_business_stage_label(decline['from_label'])}→"
+            f"{_business_stage_label(decline['to_label'])}"
+            f"{period_label}{_comparison_text(decline['delta'], decline['unit'])}"
+        )
     improvement = summary["best_improving_stage"]
     if improvement is not None:
         period_label = (
@@ -2422,26 +2581,13 @@ def _build_business_evidence(summary: dict[str, Any]) -> list[str]:
             f"{_business_stage_label(improvement['to_label'])}"
             f"{period_label}{_comparison_text(improvement['delta'], improvement['unit'])}"
         )
-    decline = summary["largest_declining_stage"]
-    if decline is not None:
-        period_label = "同比" if decline["comparison"] == "yoy" else "环比"
-        evidence.append(
-            f"最大拖累：{_business_stage_label(decline['from_label'])}→"
-            f"{_business_stage_label(decline['to_label'])}"
-            f"{period_label}{_comparison_text(decline['delta'], decline['unit'])}"
-        )
     return evidence
 
 
 def _resolve_business_insight_priority(
     summary: dict[str, Any],
-    diagnostics: list[dict[str, Any]],
 ) -> str:
-    severity_order = {"low": 1, "medium": 2, "high": 3}
-    levels = [summary["diagnosis_level"]] + [
-        item["severity"] for item in diagnostics
-    ]
-    return max(levels, key=lambda item: severity_order[item])
+    return summary["diagnosis_level"]
 
 
 def _business_insight_rank_score(
@@ -2449,7 +2595,12 @@ def _business_insight_rank_score(
     priority: str,
     traffic: int | None,
 ) -> float:
-    priority_score = {"low": 100, "medium": 200, "high": 300}[priority]
+    priority_score = {
+        "stable": 100,
+        "improving": 200,
+        "attention": 300,
+        "high_priority": 400,
+    }[priority]
     changes = [
         abs(value)
         for value in (
@@ -2730,6 +2881,7 @@ def _rule_to_field(rule: _MetricRule, source_column: str) -> _SemanticField:
         aggregation=rule.aggregation,
         confidence="high",
         stage_order=rule.stage_order,
+        semantic_role=rule.semantic_role,
     )
 
 

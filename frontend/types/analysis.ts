@@ -146,6 +146,12 @@ export interface DimensionPerformance {
     | "percentage_point"
     | "absolute_change"
     | null;
+  supplemental_outcomes: Array<{
+    metric_key: string;
+    label: string;
+    value: number;
+    unit: AggregateMetricUnit;
+  }>;
 }
 
 export interface DimensionFunnelStage {
@@ -190,7 +196,7 @@ export interface DimensionFunnelDiagnosis {
     yoy_delta: number | null;
     mom_delta: number | null;
   } | null;
-  diagnosis_level: "high" | "medium" | "low";
+  diagnosis_level: DimensionDiagnosisLevel;
 }
 
 export interface AggregateDiagnostic {
@@ -229,8 +235,14 @@ export interface AggregateBusinessInsight {
   positive_signal: string | null;
   risk_signal: string | null;
   key_evidence: string[];
-  priority: "high" | "medium" | "low";
+  priority: DimensionDiagnosisLevel;
 }
+
+export type DimensionDiagnosisLevel =
+  | "high_priority"
+  | "attention"
+  | "stable"
+  | "improving";
 
 export interface AggregateAnalysisResult {
   dataset_type: "aggregate_metrics";
@@ -263,6 +275,7 @@ export interface AggregateAnalysisResult {
     unit: AggregateMetricUnit;
     aggregation: "sum" | "weighted_rate" | "non_additive";
     confidence: "high" | "medium" | "low";
+    semantic_role: "funnel_stage" | "outcome_metric";
   }>;
   funnel_stages: Array<{
     metric_key: string;

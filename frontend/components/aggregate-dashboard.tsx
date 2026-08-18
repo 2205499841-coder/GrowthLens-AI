@@ -98,7 +98,10 @@ export function AggregateDashboard({
         title="重点经营洞察"
         description="将同一维度的趋势、正向节点与风险信号合并，每个维度仅保留一条结论。"
       >
-        <BusinessInsights insights={result.business_insights} />
+        <BusinessInsights
+          dimensionLabel={dimensionLabel}
+          insights={result.business_insights}
+        />
       </AggregateSection>
     </div>
   );
@@ -206,6 +209,13 @@ function PerformanceTable({
     yoy: rows.some((row) => row.yoy !== null),
     mom: rows.some((row) => row.mom !== null),
   };
+  const supplementalDefinitions = Array.from(
+    new Map(
+      rows
+        .flatMap((row) => row.supplemental_outcomes)
+        .map((metric) => [metric.metric_key, metric] as const),
+    ).values(),
+  );
 
   return (
     <article className="table-card aggregate-table-card">
@@ -224,6 +234,9 @@ function PerformanceTable({
               {availability.traffic ? <th>浏览用户</th> : null}
               {availability.appointment ? <th>预约用户</th> : null}
               {availability.payment ? <th>支付用户</th> : null}
+              {supplementalDefinitions.map((metric) => (
+                <th key={metric.metric_key}>{metric.label}</th>
+              ))}
               {availability.conversion ? <th>支付转化率</th> : null}
               {availability.gmv ? <th>GMV</th> : null}
               {availability.averageOrder ? <th>客单价</th> : null}
@@ -238,6 +251,16 @@ function PerformanceTable({
                 {availability.traffic ? <td>{formatOptionalInteger(row.traffic_users)}</td> : null}
                 {availability.appointment ? <td>{formatOptionalInteger(row.appointment_users)}</td> : null}
                 {availability.payment ? <td>{formatOptionalInteger(row.payment_users)}</td> : null}
+                {supplementalDefinitions.map((definition) => {
+                  const metric = row.supplemental_outcomes.find(
+                    (item) => item.metric_key === definition.metric_key,
+                  );
+                  return (
+                    <td key={definition.metric_key}>
+                      {metric ? formatInteger(metric.value) : "不可用"}
+                    </td>
+                  );
+                })}
                 {availability.conversion ? <td>{formatOptionalPercent(row.conversion_rate)}</td> : null}
                 {availability.gmv ? <td>{formatOptionalCurrency(row.gmv)}</td> : null}
                 {availability.averageOrder ? <td>{formatOptionalCurrencyPrecise(row.average_order_value)}</td> : null}
@@ -313,8 +336,10 @@ function CategoryDiagnosisTable({
 
 
 function BusinessInsights({
+  dimensionLabel,
   insights,
 }: {
+  dimensionLabel: string;
   insights: AggregateBusinessInsight[];
 }) {
   if (!insights.length) {
@@ -326,10 +351,8 @@ function BusinessInsights({
         <table className="business-insights-table">
           <thead>
             <tr>
-              <th>品类</th>
+              <th>{dimensionLabel}</th>
               <th>核心判断</th>
-              <th>正向信号</th>
-              <th>风险 / 拖累</th>
               <th>关键证据</th>
               <th>优先级</th>
             </tr>
@@ -339,8 +362,6 @@ function BusinessInsights({
               <tr key={`${item.dimension_value}-${index}`}>
                 <td><strong>{item.dimension_value}</strong></td>
                 <td className="insight-judgement-cell">{item.core_judgement}</td>
-                <td>{item.positive_signal ?? "—"}</td>
-                <td>{item.risk_signal ?? "—"}</td>
                 <td className="insight-evidence-cell">
                   <ul>
                     {item.key_evidence.map((evidence) => (
@@ -430,8 +451,15 @@ function formatComparison(
 }
 
 
-function severityLabel(severity: "high" | "medium" | "low"): string {
-  return { high: "高优先级", medium: "需关注", low: "提示" }[severity];
+function severityLabel(
+  severity: DimensionFunnelDiagnosis["diagnosis_level"],
+): string {
+  return {
+    high_priority: "高优先级",
+    attention: "需关注",
+    stable: "表现稳定",
+    improving: "改善明显",
+  }[severity];
 }
 
 

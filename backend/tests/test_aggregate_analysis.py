@@ -400,7 +400,7 @@ def test_selects_largest_improving_and_declining_stages() -> None:
     assert summary.largest_declining_stage.from_metric_key == "product_detail_users"
     assert summary.largest_declining_stage.to_metric_key == "appointment_users"
     assert summary.largest_declining_stage.delta == -0.0742
-    assert summary.diagnosis_level == "high"
+    assert summary.diagnosis_level == "high_priority"
 
 
 def test_strict_scale_conversion_rules_identify_only_clear_outliers() -> None:
@@ -520,7 +520,9 @@ def test_business_signals_are_merged_into_one_insight_per_dimension() -> None:
     assert insight.risk_signal is not None
     assert "商详→预约" in insight.risk_signal
     assert any("支付转化率" in item for item in insight.key_evidence)
-    assert insight.priority == "high"
+    assert insight.priority == "high_priority"
+    assert len(insight.key_evidence) <= 2
+    assert any("最大拖累" in item for item in insight.key_evidence)
 
 
 def test_business_insights_are_unique_and_limited_to_five() -> None:
@@ -558,3 +560,112 @@ def test_business_insights_are_unique_and_limited_to_five() -> None:
         {item.dimension_value for item in result.business_insights}
     ) == 5
     assert result.business_insights[0].dimension_value == "品类7"
+
+
+def test_payment_outcomes_do_not_create_self_loop() -> None:
+    content = _workbook_bytes(
+        [
+            "品类",
+            "浏览用户数",
+            "商详用户数",
+            "预约用户数",
+            "提交订单用户数",
+            "支付用户数",
+            "线上支付用户数",
+            "全域支付用户数",
+            "门店签到支付用户数",
+            "提交订单→支付同期偏差（百分点）",
+        ],
+        [
+            ["总计", 2000, 1500, 700, 400, 300, 180, 330, 120, -0.03],
+            ["品类A", 1200, 900, 420, 250, 170, 100, 185, 70, -0.04],
+            ["品类B", 800, 600, 280, 150, 130, 80, 145, 50, 0.02],
+        ],
+        percent_columns=(10,),
+    )
+    result = _analyze(content)
+
+    funnel_keys = [stage.metric_key for stage in result.funnel_stages]
+    assert funnel_keys.count("payment_users") == 1
+    assert "online_payment_users" not in funnel_keys
+    assert "all_channel_payment_users" not in funnel_keys
+    assert "store_payment_users" not in funnel_keys
+    assert len(funnel_keys) == len(set(funnel_keys))
+    assert all(
+        stage.from_metric_key != stage.to_metric_key
+        for summary in result.dimension_funnel_diagnostics
+        for stage in summary.stages
+    )
+
+    metric_roles = {
+        metric.metric_key: metric.semantic_role for metric in result.metrics
+    }
+    assert metric_roles["payment_users"] == "funnel_stage"
+    assert metric_roles["online_payment_users"] == "outcome_metric"
+    assert metric_roles["all_channel_payment_users"] == "outcome_metric"
+    assert metric_roles["store_payment_users"] == "outcome_metric"
+    supplemental_keys = {
+        metric.metric_key
+        for metric in result.dimension_performance[0].supplemental_outcomes
+    }
+    assert supplemental_keys == {
+        "online_payment_users",
+        "all_channel_payment_users",
+        "store_payment_users",
+    }
+
+
+def test_payment_stage_comparison_survives_supplemental_payment_columns() -> None:
+    content = _workbook_bytes(
+        [
+            "品类",
+            "浏览用户数",
+            "提交订单用户数",
+            "支付用户数",
+            "线上支付用户数",
+            "全域支付用户数",
+            "提交订单→支付同期偏差（百分点）",
+            "提交订单→支付环期偏差（百分点）",
+        ],
+        [["品类A", 1000, 300, 180, 120, 200, -0.0742, 0.031]],
+        percent_columns=(7, 8),
+    )
+    summary = _analyze(content).dimension_funnel_diagnostics[0]
+    payment_edge = next(
+        stage
+        for stage in summary.stages
+        if stage.to_metric_key == "payment_users"
+    )
+
+    assert payment_edge.from_metric_key == "order_submission_users"
+    assert payment_edge.yoy_delta == -0.0742
+    assert payment_edge.mom_delta == 0.031
+    assert summary.largest_declining_stage is not None
+    assert summary.largest_declining_stage.to_metric_key == "payment_users"
+    assert summary.best_improving_stage is not None
+    assert summary.best_improving_stage.to_metric_key == "payment_users"
+
+
+def test_dimension_diagnosis_levels_distinguish_business_states() -> None:
+    content = _workbook_bytes(
+        ["品类", "浏览用户数", "支付用户数", "支付转化率同比偏差"],
+        [
+            ["高风险", 2000, 100, -0.12],
+            ["关注", 1000, 100, -0.04],
+            ["改善", 800, 120, 0.06],
+            ["稳定", 600, 90, 0.01],
+        ],
+        percent_columns=(4,),
+    )
+    result = _analyze(content)
+    levels = {
+        item.dimension_value: item.diagnosis_level
+        for item in result.dimension_funnel_diagnostics
+    }
+
+    assert levels == {
+        "高风险": "high_priority",
+        "关注": "attention",
+        "改善": "improving",
+        "稳定": "stable",
+    }
