@@ -228,14 +228,23 @@ function EvidenceList({
   evidence: ReportEvidence[];
 }) {
   if (compact) {
-    return <small>{evidence.map((item) => item.text).join("；")}</small>;
+    return (
+      <small>
+        {evidence
+          .flatMap((item) => item.display_values)
+          .join("；")}
+      </small>
+    );
   }
   return (
     <div className="insight-detail">
       <span>数据证据</span>
       <ul className="ai-evidence-list">
         {evidence.map((item, index) => (
-          <li key={`${item.text}-${index}`}>{item.text}</li>
+          <li key={`${item.evidence_ref.join("-")}-${index}`}>
+            <strong>{item.display_values.join("；")}</strong>
+            <span>{item.interpretation}</span>
+          </li>
         ))}
       </ul>
     </div>

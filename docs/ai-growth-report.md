@@ -24,8 +24,9 @@ AI 报告模块不读取 Excel 文件或原始业务明细，只接收后端已�
 - `opportunities`：最多 2 条增长机会；
 - `limitations`：数据限制。
 
-每条证据必须携带 `evidence_ref`。模型输出后，服务端会检查引用是否存在、
-数字是否来自证据目录，以及百分比和百分点是否沿用原单位。
+模型只为每条证据返回 `evidence_ref` 和不含数字的 `interpretation`。
+服务端检查引用后，按引用顺序注入 `display_values`；数字和单位不再由模型
+自由生成。一条证据可引用多个后端字段。
 
 ## Prompt 设计
 
@@ -33,8 +34,8 @@ System Prompt 将角色、任务、格式与事实约束分开定义，核心规
 
 1. 优先使用后端已经生成的结构化经营洞察；
 2. 不重新计算或修改任何指标；
-3. 只复制 `evidence_catalog` 中的数字与显示单位；
-4. evidence 必须引用真实 `evidence_ref`；
+3. AI 草稿中的自由文本原则上不写数字；
+4. evidence 必须引用真实 `evidence_ref`，显示值由后端注入；
 5. 不补充渠道、用户画像、行业基准或业务事件；
 6. 不把原因假设写成事实；
 7. 不声称读取过 Excel 原始数据。
@@ -58,7 +59,8 @@ response_format={"type": "json_object"}
 ```
 
 System Prompt 同时包含 JSON 字段示例，并要求模型不输出 Markdown 或额外
-说明。模型响应还会经过 `AIReportResponse`、证据引用和数字单位校验。
+说明。模型响应先经过草稿 Schema 和自由文本数字校验，再由后端注入证据
+显示值并生成最终 `AIReportResponse`。百分比与百分点保持严格区分。
 
 默认环境变量：
 

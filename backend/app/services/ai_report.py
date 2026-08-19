@@ -2,15 +2,19 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
 from pydantic import ValidationError
 
 from app.core.config import settings
 from app.schemas.ai_report import (
+    AIReportDraft,
     AIReportRequest,
     AIReportResponse,
+    DraftGrowthOpportunity,
+    DraftKeyIssue,
+    DraftPriorityAction,
+    DraftReportEvidence,
     GrowthOpportunity,
     KeyIssue,
     PriorityAction,
@@ -23,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 MAX_AGGREGATE_DIMENSIONS = 20
 NUMBER_PATTERN = re.compile(
-    r"(?<!\w)([+-]?\d[\d,]*(?:\.\d+)?)\s*(个百分点|%|人|元)?(?!\w)"
+    r"(?<![A-Za-z0-9_])"
+    r"([+-]?\d[\d,]*(?:\.\d+)?)\s*(个百分点|%|人|元)?"
+    r"(?![A-Za-z0-9_])"
 )
 
 REPORT_JSON_EXAMPLE = {
@@ -33,8 +39,8 @@ REPORT_JSON_EXAMPLE = {
             "issue": "需要优先处理的问题",
             "evidence": [
                 {
-                    "text": "从 evidence_catalog 原样引用的证据",
                     "evidence_ref": ["输入中真实存在的 ref"],
+                    "interpretation": "不包含数字的业务解释",
                 }
             ],
             "impact": "问题对业务结果的影响判断",
@@ -54,8 +60,8 @@ REPORT_JSON_EXAMPLE = {
             "target": "机会对象",
             "evidence": [
                 {
-                    "text": "从 evidence_catalog 引用的机会证据",
                     "evidence_ref": ["输入中真实存在的 ref"],
+                    "interpretation": "不包含数字的机会解释",
                 }
             ],
             "recommendation": "针对机会的建议验证动作",
@@ -75,14 +81,15 @@ SYSTEM_PROMPT = f"""你是 GrowthLens AI，一名面向增长运营人员的业�
 4. key_issues 最多 3 条；每条包含 issue、evidence、impact、confidence。
 5. priority_actions 最多 3 条；每条包含 action、applicable_to、reason、target_metric，并使用“建议验证”明确标识尚未被数据证明的原因或动作假设。
 6. opportunities 最多 2 条；优先使用后端已经识别的业务洞察和机会。
-7. evidence 中每条证据必须填写 evidence_ref，且只能使用 evidence_catalog 中真实存在的 ref。
+7. evidence 中每条证据只输出 evidence_ref 和 interpretation。不得输出数字字段或自行撰写证据数值；后端会根据 evidence_ref 注入 display_value。
 
 JSON 结构示例（只表示结构，不是可引用事实）：
 {json.dumps(REPORT_JSON_EXAMPLE, ensure_ascii=False, indent=2)}
 
 事实约束：
-- 所有数字必须复制 evidence_catalog 中的 display_value，不得自行计算、换算、四舍五入或修改。
-- 百分比与百分点必须严格沿用 evidence_catalog 中的 unit 和 display_value。
+- core_conclusion、issue、impact、interpretation、action、applicable_to、reason、target_metric、target、recommendation、limitations 中不要写任何数字、年份、序号、Top N、百分比、百分点、人数或金额。
+- 数字和单位只能由后端根据 evidence_ref 从 evidence_catalog.display_value 注入。不得自行计算、换算、缩写、四舍五入或修改。
+- 一条 evidence 可以引用多个 evidence_ref；后端将按引用顺序注入多个 display_value。
 - 不得引用输入之外的品类、渠道、用户画像、行业基准、业务事件或原因。
 - diagnostic_context.business_insights 是优先事实来源；不要重新发现一套与后端结论冲突的问题。
 - 原因解释必须写成待验证假设，不得当成已经证实的事实。
@@ -110,8 +117,8 @@ class EvidenceFact:
 class AIReportProvider(Protocol):
     name: str
 
-    def generate(self, request: AIReportRequest) -> AIReportResponse:
-        """Generate a report from validated structured analysis results."""
+    def generate(self, request: AIReportRequest) -> AIReportDraft:
+        """Generate a number-free draft from structured analysis results."""
 
 
 class AIReportProviderError(RuntimeError):
@@ -138,9 +145,9 @@ def generate_ai_report(
     provider: AIReportProvider | None = None,
 ) -> AIReportResponse:
     active_provider = provider or get_ai_report_provider()
-    report = active_provider.generate(request)
-    _validate_report_evidence(request, report)
-    return report
+    draft = active_provider.generate(request)
+    _validate_report_draft(request, draft)
+    return _hydrate_report_evidence(request, draft)
 
 
 def get_ai_report_provider() -> AIReportProvider:
@@ -195,7 +202,7 @@ class OpenAICompatibleAIReportProvider:
             base_url=base_url,
         )
 
-    def generate(self, request: AIReportRequest) -> AIReportResponse:
+    def generate(self, request: AIReportRequest) -> AIReportDraft:
         try:
             completion = self._client.chat.completions.create(
                 model=self.model,
@@ -232,7 +239,7 @@ class OpenAICompatibleAIReportProvider:
 
         try:
             payload = json.loads(content)
-            return AIReportResponse.model_validate(payload)
+            return AIReportDraft.model_validate(payload)
         except (json.JSONDecodeError, ValidationError, TypeError) as exc:
             raise AIReportProviderError(
                 f"{self.display_name} 返回内容不符合 AI 报告 JSON 结构。"
@@ -340,14 +347,13 @@ def _log_provider_response_details(
 class MockAIReportProvider:
     name = "mock"
 
-    def generate(self, request: AIReportRequest) -> AIReportResponse:
+    def generate(self, request: AIReportRequest) -> AIReportDraft:
         if request.dataset_type == "aggregate_metrics":
             return _build_mock_aggregate_report(request)
         return _build_mock_user_report(request)
 
 
-def _build_mock_user_report(request: AIReportRequest) -> AIReportResponse:
-    metrics = _require(request.metrics, "metrics")
+def _build_mock_user_report(request: AIReportRequest) -> AIReportDraft:
     funnel = _require(request.funnel, "funnel")
     channels = _require(request.channels, "channels")
     bottleneck_index, bottleneck = _find_bottleneck(funnel.stages)
@@ -373,45 +379,34 @@ def _build_mock_user_report(request: AIReportRequest) -> AIReportResponse:
         f"user_level.channels.{largest_name}.registered_users"
     )
     quality_ref = f"user_level.channels.{quality_name}.paid_rate"
-    return AIReportResponse(
+    return AIReportDraft(
         core_conclusion=(
-            f"当前 {_display(metrics.user_counts.registered_users, 'count')} 注册用户形成 "
-            f"{_display(metrics.user_counts.paid_users, 'count')} 成交用户，"
-            f"{previous_stage.label}→{bottleneck.label}阶段转化率为 "
-            f"{_display(bottleneck.conversion_rate_from_previous, 'ratio')}，"
-            f"应优先验证该环节的承接路径；{quality_name}可作为渠道扩量观察对象。"
+            f"当前注册到成交链路已形成稳定业务基础，"
+            f"{previous_stage.label}→{bottleneck.label}是首要承接问题；"
+            f"建议先验证该环节的路径优化，再评估{quality_name}的扩量空间。"
         ),
         key_issues=[
-            KeyIssue(
+            DraftKeyIssue(
                 issue=f"{previous_stage.label}→{bottleneck.label}是主要流失节点",
                 evidence=[
-                    ReportEvidence(
-                        text=(
-                            f"阶段转化率 "
-                            f"{_display(bottleneck.conversion_rate_from_previous, 'ratio')}"
-                        ),
+                    DraftReportEvidence(
                         evidence_ref=[bottleneck_ref],
+                        interpretation="该阶段的承接效率弱于其他漏斗节点。",
                     )
                 ],
                 impact="该环节流失会减少进入后续成交阶段的用户规模。",
                 confidence="high",
             ),
-            KeyIssue(
+            DraftKeyIssue(
                 issue="渠道规模与成交效率存在差异",
                 evidence=[
-                    ReportEvidence(
-                        text=(
-                            f"{largest_name}注册用户 "
-                            f"{_display(largest_metrics.user_counts.registered_users, 'count')}"
-                        ),
+                    DraftReportEvidence(
                         evidence_ref=[largest_ref],
+                        interpretation="该渠道承担主要用户规模。",
                     ),
-                    ReportEvidence(
-                        text=(
-                            f"{quality_name}成交率 "
-                            f"{_display(quality_metrics.conversion_rates.paid_rate, 'ratio')}"
-                        ),
+                    DraftReportEvidence(
                         evidence_ref=[quality_ref],
+                        interpretation="该渠道的成交效率相对突出。",
                     ),
                 ],
                 impact="规模渠道与高效率渠道需要采用不同的优化顺序。",
@@ -419,7 +414,7 @@ def _build_mock_user_report(request: AIReportRequest) -> AIReportResponse:
             ),
         ],
         priority_actions=[
-            PriorityAction(
+            DraftPriorityAction(
                 action=(
                     f"建议验证{previous_stage.label}到{bottleneck.label}的页面信息、"
                     "操作路径和触达时机，减少主要流失节点的阻力。"
@@ -428,7 +423,7 @@ def _build_mock_user_report(request: AIReportRequest) -> AIReportResponse:
                 reason="该阶段已被后端漏斗分析识别为主要损耗点。",
                 target_metric=f"{previous_stage.label}→{bottleneck.label}阶段转化率",
             ),
-            PriorityAction(
+            DraftPriorityAction(
                 action=f"建议验证{quality_name}扩大有效流量后成交效率是否稳定。",
                 applicable_to=quality_name,
                 reason="该渠道当前成交效率相对突出，适合小范围验证扩量。",
@@ -436,15 +431,12 @@ def _build_mock_user_report(request: AIReportRequest) -> AIReportResponse:
             ),
         ],
         opportunities=[
-            GrowthOpportunity(
+            DraftGrowthOpportunity(
                 target=quality_name,
                 evidence=[
-                    ReportEvidence(
-                        text=(
-                            f"成交率 "
-                            f"{_display(quality_metrics.conversion_rates.paid_rate, 'ratio')}"
-                        ),
+                    DraftReportEvidence(
                         evidence_ref=[quality_ref],
+                        interpretation="当前成交效率具备进一步验证扩量的条件。",
                     )
                 ],
                 recommendation="建议验证分批增加有效流量后，成交率能否保持稳定。",
@@ -458,12 +450,12 @@ def _build_mock_user_report(request: AIReportRequest) -> AIReportResponse:
 
 def _build_mock_aggregate_report(
     request: AIReportRequest,
-) -> AIReportResponse:
+) -> AIReportDraft:
     analysis = _require(request.aggregate_analysis, "aggregate_analysis")
     facts = {fact.reference: fact for fact in _build_evidence_catalog(request)}
     selected_insights = analysis.business_insights[:3]
-    issues: list[KeyIssue] = []
-    actions: list[PriorityAction] = []
+    issues: list[DraftKeyIssue] = []
+    actions: list[DraftPriorityAction] = []
     for insight in selected_insights:
         refs = [
             f"aggregate.business_insights[{analysis.business_insights.index(insight)}]"
@@ -471,9 +463,9 @@ def _build_mock_aggregate_report(
             for index, _ in enumerate(insight.key_evidence[:2])
         ]
         evidence = [
-            ReportEvidence(
-                text=facts[reference].display_value,
+            DraftReportEvidence(
                 evidence_ref=[reference],
+                interpretation="该证据来自后端已确认的经营洞察。",
             )
             for reference in refs
             if reference in facts
@@ -481,7 +473,7 @@ def _build_mock_aggregate_report(
         if not evidence:
             continue
         issues.append(
-            KeyIssue(
+            DraftKeyIssue(
                 issue=insight.core_judgement.rstrip("。"),
                 evidence=evidence,
                 impact=_aggregate_impact_text(insight.priority),
@@ -508,7 +500,7 @@ def _build_mock_aggregate_report(
             target_metric = f"{stage_name}阶段转化率"
             applicable_to = f"{insight.dimension_value} · {stage_name}"
         actions.append(
-            PriorityAction(
+            DraftPriorityAction(
                 action=(
                     f"建议验证{applicable_to}的信息表达、操作路径和权益说明，"
                     "优先排查后端诊断指出的主要拖累环节。"
@@ -519,7 +511,7 @@ def _build_mock_aggregate_report(
             )
         )
 
-    opportunities: list[GrowthOpportunity] = []
+    opportunities: list[DraftGrowthOpportunity] = []
     for opportunity_index, opportunity in enumerate(analysis.opportunities[:2]):
         reference = (
             f"aggregate.opportunities[{opportunity_index}].evidence"
@@ -528,12 +520,12 @@ def _build_mock_aggregate_report(
         if fact is None:
             continue
         opportunities.append(
-            GrowthOpportunity(
+            DraftGrowthOpportunity(
                 target=opportunity.dimension_value,
                 evidence=[
-                    ReportEvidence(
-                        text=fact.display_value,
+                    DraftReportEvidence(
                         evidence_ref=[reference],
+                        interpretation="该对象已被后端识别为经营机会。",
                     )
                 ],
                 recommendation=(
@@ -557,12 +549,12 @@ def _build_mock_aggregate_report(
         if fact is None:
             continue
         opportunities.append(
-            GrowthOpportunity(
+            DraftGrowthOpportunity(
                 target=insight.dimension_value,
                 evidence=[
-                    ReportEvidence(
-                        text=fact.display_value,
+                    DraftReportEvidence(
                         evidence_ref=[reference],
+                        interpretation="该漏斗环节呈现明确的正向改善信号。",
                     )
                 ],
                 recommendation=(
@@ -596,7 +588,7 @@ def _build_mock_aggregate_report(
     limitations = _aggregate_limitations(analysis)
     if not limitations:
         limitations = ["诊断仅使用后端已验证的聚合经营分析结果。"]
-    return AIReportResponse(
+    return AIReportDraft(
         core_conclusion=core_conclusion,
         key_issues=issues[:3],
         priority_actions=actions[:3],
@@ -969,9 +961,9 @@ def _build_aggregate_evidence_catalog(analysis) -> list[EvidenceFact]:
     return facts
 
 
-def _validate_report_evidence(
+def _validate_report_draft(
     request: AIReportRequest,
-    report: AIReportResponse,
+    draft: AIReportDraft,
 ) -> None:
     facts = _build_evidence_catalog(request)
     fact_lookup = {fact.reference: fact for fact in facts}
@@ -981,74 +973,157 @@ def _validate_report_evidence(
         for mention in _numeric_mentions(fact.display_value)
     }
     evidence_items = [
-        evidence
-        for issue in report.key_issues
-        for evidence in issue.evidence
+        (f"key_issues[{issue_index}].evidence[{evidence_index}]", evidence)
+        for issue_index, issue in enumerate(draft.key_issues)
+        for evidence_index, evidence in enumerate(issue.evidence)
     ] + [
-        evidence
-        for opportunity in report.opportunities
-        for evidence in opportunity.evidence
+        (f"opportunities[{opportunity_index}].evidence[{evidence_index}]", evidence)
+        for opportunity_index, opportunity in enumerate(draft.opportunities)
+        for evidence_index, evidence in enumerate(opportunity.evidence)
     ]
-    for evidence in evidence_items:
+    for field_path, evidence in evidence_items:
         unknown_refs = set(evidence.evidence_ref) - set(fact_lookup)
         if unknown_refs:
             raise AIReportProviderError(
-                "AI 报告引用了未知 evidence_ref："
+                f"AI 报告字段 {field_path} 引用了未知 evidence_ref："
                 + "、".join(sorted(unknown_refs))
             )
-        referenced_mentions = {
-            mention
-            for reference in evidence.evidence_ref
-            for mention in _numeric_mentions(
-                fact_lookup[reference].display_value
-            )
-        }
-        unsupported = (
-            _numeric_mentions(evidence.text) - referenced_mentions
-        )
-        if unsupported:
-            raise AIReportProviderError(
-                "AI 报告证据中的数字与 evidence_ref 不一致。"
-            )
 
-    report_mentions = {
-        mention
-        for text in _report_content_texts(report)
-        for mention in _numeric_mentions(text)
-    }
-    unsupported_report_mentions = report_mentions - allowed_mentions
-    if unsupported_report_mentions:
+    for field_path, text in _draft_content_fields(draft):
+        unsupported = _numeric_mentions(text) - allowed_mentions
+        if not unsupported:
+            continue
+        formatted_mentions = "、".join(
+            sorted(_format_numeric_mention(item) for item in unsupported)
+        )
+        logger.warning(
+            "AI 报告数字校验失败：field=%s unsupported=%s",
+            field_path,
+            formatted_mentions,
+        )
         raise AIReportProviderError(
-            "AI 报告包含后端分析结果中不存在的数字或单位。"
+            f"AI 报告字段 {field_path} 包含无法匹配 evidence_catalog 的"
+            f"数字或单位：{formatted_mentions}。"
         )
 
 
-def _report_content_texts(report: AIReportResponse) -> list[str]:
-    texts = [report.core_conclusion, *report.limitations]
-    for issue in report.key_issues:
-        texts.extend([issue.issue, issue.impact])
-        texts.extend(evidence.text for evidence in issue.evidence)
-    for action in report.priority_actions:
-        texts.extend(
+def _hydrate_report_evidence(
+    request: AIReportRequest,
+    draft: AIReportDraft,
+) -> AIReportResponse:
+    fact_lookup = {
+        fact.reference: fact for fact in _build_evidence_catalog(request)
+    }
+
+    def hydrate(evidence: DraftReportEvidence) -> ReportEvidence:
+        display_values = list(
+            dict.fromkeys(
+                fact_lookup[reference].display_value
+                for reference in evidence.evidence_ref
+            )
+        )
+        return ReportEvidence(
+            evidence_ref=evidence.evidence_ref,
+            display_values=display_values,
+            interpretation=evidence.interpretation,
+        )
+
+    return AIReportResponse(
+        core_conclusion=draft.core_conclusion,
+        key_issues=[
+            KeyIssue(
+                issue=issue.issue,
+                evidence=[hydrate(item) for item in issue.evidence],
+                impact=issue.impact,
+                confidence=issue.confidence,
+            )
+            for issue in draft.key_issues
+        ],
+        priority_actions=[
+            PriorityAction(
+                action=action.action,
+                applicable_to=action.applicable_to,
+                reason=action.reason,
+                target_metric=action.target_metric,
+            )
+            for action in draft.priority_actions
+        ],
+        opportunities=[
+            GrowthOpportunity(
+                target=opportunity.target,
+                evidence=[hydrate(item) for item in opportunity.evidence],
+                recommendation=opportunity.recommendation,
+            )
+            for opportunity in draft.opportunities
+        ],
+        limitations=draft.limitations,
+    )
+
+
+def _draft_content_fields(draft: AIReportDraft) -> list[tuple[str, str]]:
+    fields = [("core_conclusion", draft.core_conclusion)]
+    fields.extend(
+        (f"limitations[{index}]", value)
+        for index, value in enumerate(draft.limitations)
+    )
+    for issue_index, issue in enumerate(draft.key_issues):
+        prefix = f"key_issues[{issue_index}]"
+        fields.extend(
             [
-                action.action,
-                action.applicable_to,
-                action.reason,
-                action.target_metric,
+                (prefix + ".issue", issue.issue),
+                (prefix + ".impact", issue.impact),
             ]
         )
-    for opportunity in report.opportunities:
-        texts.extend([opportunity.target, opportunity.recommendation])
-        texts.extend(evidence.text for evidence in opportunity.evidence)
-    return texts
+        fields.extend(
+            (
+                f"{prefix}.evidence[{evidence_index}].interpretation",
+                evidence.interpretation,
+            )
+            for evidence_index, evidence in enumerate(issue.evidence)
+        )
+    for action_index, action in enumerate(draft.priority_actions):
+        prefix = f"priority_actions[{action_index}]"
+        fields.extend(
+            [
+                (prefix + ".action", action.action),
+                (prefix + ".applicable_to", action.applicable_to),
+                (prefix + ".reason", action.reason),
+                (prefix + ".target_metric", action.target_metric),
+            ]
+        )
+    for opportunity_index, opportunity in enumerate(draft.opportunities):
+        prefix = f"opportunities[{opportunity_index}]"
+        fields.extend(
+            [
+                (prefix + ".target", opportunity.target),
+                (prefix + ".recommendation", opportunity.recommendation),
+            ]
+        )
+        fields.extend(
+            (
+                f"{prefix}.evidence[{evidence_index}].interpretation",
+                evidence.interpretation,
+            )
+            for evidence_index, evidence in enumerate(opportunity.evidence)
+        )
+    return fields
+
+
+def _format_numeric_mention(mention: tuple[str, str]) -> str:
+    value, unit = mention
+    suffix = {
+        "percentage_point": " 个百分点",
+        "ratio": "%",
+        "count": " 人",
+        "currency": " 元",
+        "number": "",
+    }[unit]
+    return f"{value}{suffix}"
 
 
 def _numeric_mentions(text: str) -> set[tuple[str, str]]:
     mentions: set[tuple[str, str]] = set()
     for raw_value, raw_unit in NUMBER_PATTERN.findall(text):
-        normalized = _normalize_number(raw_value)
-        if normalized is None:
-            continue
         unit = {
             "个百分点": "percentage_point",
             "%": "ratio",
@@ -1056,17 +1131,8 @@ def _numeric_mentions(text: str) -> set[tuple[str, str]]:
             "元": "currency",
             "": "number",
         }[raw_unit]
-        mentions.add((normalized, unit))
+        mentions.add((raw_value, unit))
     return mentions
-
-
-def _normalize_number(value: str) -> str | None:
-    try:
-        decimal_value = Decimal(value.replace(",", ""))
-    except InvalidOperation:
-        return None
-    normalized = format(decimal_value.normalize(), "f")
-    return "0" if normalized in {"-0", "+0"} else normalized
 
 
 def _fact(

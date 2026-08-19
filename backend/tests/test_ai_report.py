@@ -125,8 +125,12 @@ def test_openai_compatible_provider_uses_json_output(
     base_url,
 ) -> None:
     request = _sample_aggregate_request()
-    expected_report = MockAIReportProvider().generate(request)
-    fake_client = FakeOpenAIClient(expected_report.model_dump_json())
+    expected_draft = MockAIReportProvider().generate(request)
+    expected_report = generate_ai_report(
+        request,
+        provider=MockAIReportProvider(),
+    )
+    fake_client = FakeOpenAIClient(expected_draft.model_dump_json())
     provider = provider_class(
         api_key="test-key",
         model="provider-test-model",
@@ -215,7 +219,8 @@ def test_unified_report_enforces_output_item_limits(
     field_name: str,
     item_count: int,
 ) -> None:
-    report = MockAIReportProvider().generate(_sample_user_request())
+    request = _sample_user_request()
+    report = generate_ai_report(request, provider=MockAIReportProvider())
     payload = report.model_dump(mode="json")
     source_items = payload[field_name]
     payload[field_name] = [source_items[0] for _ in range(item_count)]
@@ -281,35 +286,113 @@ def test_report_rejects_fabricated_number() -> None:
         update={"core_conclusion": report.core_conclusion + "预计提升 99%。"}
     )
 
-    with pytest.raises(AIReportProviderError, match="不存在的数字"):
+    with pytest.raises(
+        AIReportProviderError,
+        match=r"core_conclusion.*99%",
+    ):
         generate_ai_report(
             request,
             provider=StaticProvider(invalid_report),
+        )
+
+
+def test_report_rejects_fabricated_number_adjacent_to_chinese_text() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    invalid_draft = draft.model_copy(
+        update={"core_conclusion": draft.core_conclusion + "预计提升99%。"}
+    )
+
+    with pytest.raises(
+        AIReportProviderError,
+        match=r"core_conclusion.*99%",
+    ):
+        generate_ai_report(
+            request,
+            provider=StaticProvider(invalid_draft),
         )
 
 
 def test_report_rejects_percentage_point_as_percent() -> None:
     request = _sample_aggregate_request()
-    report = MockAIReportProvider().generate(request)
-    issue = next(
-        item
-        for item in report.key_issues
-        if any("百分点" in evidence.text for evidence in item.evidence)
-    )
-    evidence = next(
-        item for item in issue.evidence if "百分点" in item.text
-    )
+    draft = MockAIReportProvider().generate(request)
+    issue = draft.key_issues[0]
+    evidence = issue.evidence[0]
     invalid_evidence = evidence.model_copy(
-        update={"text": evidence.text.replace(" 个百分点", "%")}
+        update={"interpretation": "支付转化同比提升 +4%。"}
     )
     invalid_issue = issue.model_copy(update={"evidence": [invalid_evidence]})
-    invalid_report = report.model_copy(update={"key_issues": [invalid_issue]})
+    invalid_draft = draft.model_copy(update={"key_issues": [invalid_issue]})
 
-    with pytest.raises(AIReportProviderError, match="evidence_ref 不一致"):
+    with pytest.raises(
+        AIReportProviderError,
+        match=r"evidence\[0\]\.interpretation.*4%",
+    ):
         generate_ai_report(
             request,
-            provider=StaticProvider(invalid_report),
+            provider=StaticProvider(invalid_draft),
         )
+
+
+def test_report_rejects_changed_decimal_precision() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    invalid_draft = draft.model_copy(
+        update={"core_conclusion": draft.core_conclusion + "支付转化率15%。"}
+    )
+
+    with pytest.raises(
+        AIReportProviderError,
+        match=r"core_conclusion.*15%",
+    ):
+        generate_ai_report(
+            request,
+            provider=StaticProvider(invalid_draft),
+        )
+
+
+def test_backend_injects_exact_display_values_from_evidence_refs() -> None:
+    request = _sample_aggregate_request()
+
+    report = generate_ai_report(request, provider=MockAIReportProvider())
+    evidence = report.key_issues[0].evidence[0]
+
+    assert evidence.display_values == [
+        "支付转化率 15.00%；同比+4.00 个百分点；环比+1.00 个百分点"
+    ]
+    assert "15.00" not in evidence.interpretation
+    assert "百分点" not in evidence.interpretation
+
+
+def test_one_evidence_can_hydrate_multiple_refs_in_order() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    issue = draft.key_issues[0]
+    combined_evidence = issue.evidence[0].model_copy(
+        update={
+            "evidence_ref": [
+                issue.evidence[0].evidence_ref[0],
+                issue.evidence[1].evidence_ref[0],
+            ],
+            "interpretation": "整体趋势改善，但主要拖累节点仍需验证。",
+        }
+    )
+    combined_issue = issue.model_copy(
+        update={"evidence": [combined_evidence]}
+    )
+    combined_draft = draft.model_copy(
+        update={"key_issues": [combined_issue]}
+    )
+
+    report = generate_ai_report(
+        request,
+        provider=StaticProvider(combined_draft),
+    )
+
+    assert report.key_issues[0].evidence[0].display_values == [
+        "支付转化率 15.00%；同比+4.00 个百分点；环比+1.00 个百分点",
+        "最大拖累：商详→预约同比-7.42 个百分点",
+    ]
 
 
 def test_analysis_endpoint_does_not_depend_on_ai_provider(monkeypatch) -> None:

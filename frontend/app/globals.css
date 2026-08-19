@@ -1264,6 +1264,26 @@ tbody tr:hover {
   padding-left: 17px;
 }
 
+.ai-evidence-list li + li {
+  margin-top: 8px;
+}
+
+.ai-evidence-list strong,
+.ai-evidence-list span {
+  display: block;
+}
+
+.ai-evidence-list strong {
+  color: #3f4d64;
+  font-weight: 700;
+}
+
+.ai-evidence-list span {
+  color: var(--subtle);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
 .ai-report-columns {
   border-top: 1px solid var(--border);
   display: grid;

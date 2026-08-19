@@ -1,8 +1,9 @@
 export type ConfidenceLevel = "high" | "medium" | "low";
 
 export interface ReportEvidence {
-  text: string;
   evidence_ref: string[];
+  display_values: string[];
+  interpretation: string;
 }
 
 export interface KeyIssue {

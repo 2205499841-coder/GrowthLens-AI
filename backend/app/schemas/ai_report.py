@@ -58,9 +58,49 @@ class AIReportRequest(StrictSchema):
         return self
 
 
-class ReportEvidence(StrictSchema):
-    text: str = Field(min_length=1)
+class DraftReportEvidence(StrictSchema):
     evidence_ref: list[str] = Field(min_length=1, max_length=4)
+    interpretation: str = Field(min_length=1)
+
+
+class DraftKeyIssue(StrictSchema):
+    issue: str = Field(min_length=1)
+    evidence: list[DraftReportEvidence] = Field(min_length=1, max_length=3)
+    impact: str = Field(min_length=1)
+    confidence: ConfidenceLevel
+
+
+class DraftPriorityAction(StrictSchema):
+    action: str = Field(min_length=1)
+    applicable_to: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    target_metric: str = Field(min_length=1)
+
+
+class DraftGrowthOpportunity(StrictSchema):
+    target: str = Field(min_length=1)
+    evidence: list[DraftReportEvidence] = Field(min_length=1, max_length=2)
+    recommendation: str = Field(min_length=1)
+
+
+class AIReportDraft(StrictSchema):
+    core_conclusion: str = Field(min_length=1, max_length=240)
+    key_issues: list[DraftKeyIssue] = Field(default_factory=list, max_length=3)
+    priority_actions: list[DraftPriorityAction] = Field(
+        default_factory=list,
+        max_length=3,
+    )
+    opportunities: list[DraftGrowthOpportunity] = Field(
+        default_factory=list,
+        max_length=2,
+    )
+    limitations: list[str] = Field(default_factory=list, max_length=5)
+
+
+class ReportEvidence(StrictSchema):
+    evidence_ref: list[str] = Field(min_length=1, max_length=4)
+    display_values: list[str] = Field(min_length=1, max_length=4)
+    interpretation: str = Field(min_length=1)
 
 
 class KeyIssue(StrictSchema):
