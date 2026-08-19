@@ -11,10 +11,12 @@ from app.schemas.ai_report import (
     AIReportDraft,
     AIReportRequest,
     AIReportResponse,
+    DraftGrowthExplanation,
     DraftGrowthOpportunity,
     DraftKeyIssue,
     DraftPriorityAction,
     DraftReportEvidence,
+    GrowthExplanation,
     GrowthOpportunity,
     KeyIssue,
     PriorityAction,
@@ -34,6 +36,17 @@ NUMBER_PATTERN = re.compile(
 
 REPORT_JSON_EXAMPLE = {
     "core_conclusion": "引用真实业务信号的核心结论",
+    "growth_explanation": {
+        "growth_driver": "conversion",
+        "why": "不包含数字的增长来源解释",
+        "main_contribution": "主要贡献或抵消环节",
+        "evidence": [
+            {
+                "evidence_ref": ["输入中真实存在的 ref"],
+                "interpretation": "不包含数字的归因解释",
+            }
+        ],
+    },
     "key_issues": [
         {
             "issue": "需要优先处理的问题",
@@ -52,6 +65,7 @@ REPORT_JSON_EXAMPLE = {
             "action": "包含建议验证字样的具体动作",
             "applicable_to": "适用维度或环节",
             "reason": "与重点问题直接对应的建议原因",
+            "experiment": "可执行的验证方案",
             "target_metric": "输入中真实存在的指标",
         }
     ],
@@ -76,18 +90,19 @@ SYSTEM_PROMPT = f"""你是 GrowthLens AI，一名面向增长运营人员的业�
 
 输出要求：
 1. 只输出合法 JSON 对象，不要 Markdown、代码块或额外说明。
-2. 统一输出 core_conclusion、key_issues、priority_actions、opportunities、limitations。
+2. 统一输出 core_conclusion、growth_explanation、key_issues、priority_actions、opportunities、limitations。user_level 的 growth_explanation 可以为 null。
 3. core_conclusion 只写一段，优先控制在 80—120 个中文字符，必须指出具体表现对象、问题节点或改善方向，禁止空泛总结。
-4. key_issues 最多 3 条；每条包含 issue、evidence、impact、confidence。
-5. priority_actions 最多 3 条；每条包含 action、applicable_to、reason、target_metric，并使用“建议验证”明确标识尚未被数据证明的原因或动作假设。
-6. opportunities 最多 2 条；优先使用后端已经识别的业务洞察和机会。
-7. evidence 中每条证据只输出 evidence_ref 和 interpretation。不得输出数字字段或自行撰写证据数值；后端会根据 evidence_ref 注入 display_value。
+4. aggregate_metrics 必须基于 diagnostic_context.growth_attribution 回答支付用户变化主要伴随流量、转化效率还是双重变化，并指出主要贡献或抵消环节；不得只复述最终支付转化率。
+5. key_issues 最多 3 条；每条包含 issue、evidence、impact、confidence。
+6. priority_actions 最多 3 条；每条包含 action、applicable_to、reason、experiment、target_metric，并使用“建议验证”明确标识尚未被数据证明的原因或动作假设。动作必须同时关联问题节点、原因假设、验证方案和目标指标。
+7. opportunities 最多 2 条；优先使用后端已经识别的业务洞察和机会。
+8. evidence 中每条证据只输出 evidence_ref 和 interpretation。不得输出数字字段或自行撰写证据数值；后端会根据 evidence_ref 注入 display_value。
 
 JSON 结构示例（只表示结构，不是可引用事实）：
 {json.dumps(REPORT_JSON_EXAMPLE, ensure_ascii=False, indent=2)}
 
 事实约束：
-- core_conclusion、issue、impact、interpretation、action、applicable_to、reason、target_metric、target、recommendation、limitations 中不要写任何数字、年份、序号、Top N、百分比、百分点、人数或金额。
+- core_conclusion、why、main_contribution、issue、impact、interpretation、action、applicable_to、reason、experiment、target_metric、target、recommendation、limitations 中不要写任何数字、年份、序号、Top N、百分比、百分点、人数或金额。
 - 数字和单位只能由后端根据 evidence_ref 从 evidence_catalog.display_value 注入。不得自行计算、换算、缩写、四舍五入或修改。
 - 一条 evidence 可以引用多个 evidence_ref；后端将按引用顺序注入多个 display_value。
 - 不得引用输入之外的品类、渠道、用户画像、行业基准、业务事件或原因。
@@ -499,14 +514,19 @@ def _build_mock_aggregate_report(
             stage_name = f"{movement.from_label}→{movement.to_label}"
             target_metric = f"{stage_name}阶段转化率"
             applicable_to = f"{insight.dimension_value} · {stage_name}"
+        action, experiment = _aggregate_action_for_stage(
+            insight.dimension_value,
+            diagnosis,
+        )
         actions.append(
             DraftPriorityAction(
-                action=(
-                    f"建议验证{applicable_to}的信息表达、操作路径和权益说明，"
-                    "优先排查后端诊断指出的主要拖累环节。"
-                ),
+                action=action,
                 applicable_to=applicable_to,
-                reason="该动作与后端已生成的重点经营洞察直接对应。",
+                reason=(
+                    "该环节被后端识别为主要拖累，建议验证信息理解成本或"
+                    "操作路径阻力是否造成流失。"
+                ),
+                experiment=experiment,
                 target_metric=target_metric,
             )
         )
@@ -590,10 +610,87 @@ def _build_mock_aggregate_report(
         limitations = ["诊断仅使用后端已验证的聚合经营分析结果。"]
     return AIReportDraft(
         core_conclusion=core_conclusion,
+        growth_explanation=_build_mock_growth_explanation(analysis, facts),
         key_issues=issues[:3],
         priority_actions=actions[:3],
         opportunities=opportunities[:2],
         limitations=limitations[:5],
+    )
+
+
+def _build_mock_growth_explanation(
+    analysis,
+    facts: dict[str, EvidenceFact],
+) -> DraftGrowthExplanation | None:
+    preferred_dimensions = [
+        item.dimension_value for item in analysis.business_insights
+    ]
+    ordered = sorted(
+        enumerate(analysis.growth_attribution),
+        key=lambda item: (
+            preferred_dimensions.index(item[1].dimension_value)
+            if item[1].dimension_value in preferred_dimensions
+            else len(preferred_dimensions)
+        ),
+    )
+    for index, attribution in ordered:
+        refs = [
+            f"aggregate.growth_attribution[{index}].traffic_change.browse_users_yoy",
+            f"aggregate.growth_attribution[{index}].traffic_change.payment_users_yoy",
+            f"aggregate.growth_attribution[{index}].conversion_change.payment_rate_change",
+        ]
+        available_refs = [reference for reference in refs if reference in facts]
+        if not available_refs:
+            continue
+        contribution = attribution.funnel_contribution_analysis
+        main_contribution = (
+            contribution.primary_contribution_stage
+            or contribution.primary_drag_stage
+            or "流量规模与支付转化效率的相对变化"
+        )
+        return DraftGrowthExplanation(
+            growth_driver=attribution.growth_driver,
+            why=attribution.driver_explanation,
+            main_contribution=main_contribution,
+            evidence=[
+                DraftReportEvidence(
+                    evidence_ref=available_refs[:3],
+                    interpretation="增长来源判断基于后端验证的规模与效率变化。",
+                )
+            ],
+        )
+    return None
+
+
+def _aggregate_action_for_stage(
+    dimension_value: str,
+    diagnosis,
+) -> tuple[str, str]:
+    movement = diagnosis.largest_declining_stage if diagnosis else None
+    if movement is None:
+        return (
+            f"建议验证{dimension_value}的流量承接与支付路径，定位主要流失原因。",
+            "按关键漏斗节点拆分复盘用户路径，并对候选方案进行小范围对照验证。",
+        )
+    stage_name = f"{movement.from_label}→{movement.to_label}"
+    if "商详" in movement.from_label and "预约" in movement.to_label:
+        return (
+            f"建议验证{dimension_value}商详页套餐信息、价格说明和预约入口展示。",
+            "对照验证不同商详信息结构、权益说明和预约入口位置。",
+        )
+    if "预约" in movement.from_label and "SKU" in movement.to_label.upper():
+        return (
+            f"建议验证{dimension_value}预约后的套餐选择引导和默认推荐逻辑。",
+            "对照验证不同套餐排序、推荐说明和选择路径。",
+        )
+    if "提交" in movement.from_label and "支付" in movement.to_label:
+        return (
+            f"建议验证{dimension_value}订单确认后的支付信息和操作路径。",
+            "对照验证支付说明、权益提醒和支付入口呈现方式。",
+        )
+    return (
+        f"建议验证{dimension_value}在{stage_name}环节的信息表达和操作路径。",
+        f"围绕{stage_name}设计路径简化与信息表达方案并进行对照验证。",
     )
 
 
@@ -659,6 +756,27 @@ def _build_diagnostic_context(request: AIReportRequest) -> dict[str, Any]:
         "business_insights": [
             item.model_dump(mode="json")
             for item in analysis.business_insights[:5]
+        ],
+        "growth_attribution": [
+            item.model_dump(mode="json")
+            for item in analysis.growth_attribution
+            if item.dimension_value in selected_values
+        ],
+        "user_scale_analysis": [
+            {
+                "dimension_value": item.dimension_value,
+                **item.user_scale_analysis.model_dump(mode="json"),
+            }
+            for item in analysis.growth_attribution
+            if item.dimension_value in selected_values
+        ],
+        "funnel_contribution_analysis": [
+            {
+                "dimension_value": item.dimension_value,
+                **item.funnel_contribution_analysis.model_dump(mode="json"),
+            }
+            for item in analysis.growth_attribution
+            if item.dimension_value in selected_values
         ],
         "funnel_summary": analysis.funnel.model_dump(mode="json"),
         "detected_anomalies": [
@@ -914,6 +1032,44 @@ def _build_aggregate_evidence_catalog(analysis) -> list[EvidenceFact]:
                             unit,
                         )
                     )
+    for index, attribution in enumerate(analysis.growth_attribution):
+        if attribution.dimension_value not in selected_values:
+            continue
+        prefix = f"aggregate.growth_attribution[{index}]"
+        for field_name, label in (
+            ("browse_users_yoy", "浏览用户同比"),
+            ("booking_users_yoy", "预约用户同比"),
+            ("payment_users_yoy", "支付用户同比"),
+        ):
+            value = getattr(attribution.traffic_change, field_name)
+            if value is not None:
+                fact_label = f"{attribution.dimension_value}{label}"
+                facts.append(
+                    EvidenceFact(
+                        reference=f"{prefix}.traffic_change.{field_name}",
+                        label=fact_label,
+                        display_value=(
+                            f"{fact_label} {_display(value, 'ratio_change')}"
+                        ),
+                        unit="ratio_change",
+                    )
+                )
+        rate_change = attribution.conversion_change.payment_rate_change
+        rate_unit = attribution.conversion_change.unit
+        if rate_change is not None and rate_unit is not None:
+            fact_label = f"{attribution.dimension_value}支付转化率同比"
+            facts.append(
+                EvidenceFact(
+                    reference=(
+                        f"{prefix}.conversion_change.payment_rate_change"
+                    ),
+                    label=fact_label,
+                    display_value=(
+                        f"{fact_label} {_display(rate_change, rate_unit)}"
+                    ),
+                    unit=rate_unit,
+                )
+            )
     for index, insight in enumerate(analysis.business_insights[:5]):
         for field_name in ("positive_signal", "risk_signal"):
             signal = getattr(insight, field_name)
@@ -967,6 +1123,21 @@ def _validate_report_draft(
 ) -> None:
     facts = _build_evidence_catalog(request)
     fact_lookup = {fact.reference: fact for fact in facts}
+    if request.dataset_type == "aggregate_metrics":
+        analysis = _require(request.aggregate_analysis, "aggregate_analysis")
+        attributable = [
+            item
+            for item in analysis.growth_attribution
+            if item.growth_driver != "unavailable"
+        ]
+        if attributable and draft.growth_explanation is None:
+            raise AIReportProviderError(
+                "AI 报告缺少 aggregate_metrics 增长来源分析。"
+            )
+        if any(action.experiment is None for action in draft.priority_actions):
+            raise AIReportProviderError(
+                "AI 报告的聚合经营建议缺少验证方案。"
+            )
     allowed_mentions = {
         mention
         for fact in facts
@@ -981,6 +1152,16 @@ def _validate_report_draft(
         for opportunity_index, opportunity in enumerate(draft.opportunities)
         for evidence_index, evidence in enumerate(opportunity.evidence)
     ]
+    if draft.growth_explanation is not None:
+        evidence_items.extend(
+            (
+                f"growth_explanation.evidence[{evidence_index}]",
+                evidence,
+            )
+            for evidence_index, evidence in enumerate(
+                draft.growth_explanation.evidence
+            )
+        )
     for field_path, evidence in evidence_items:
         unknown_refs = set(evidence.evidence_ref) - set(fact_lookup)
         if unknown_refs:
@@ -988,6 +1169,12 @@ def _validate_report_draft(
                 f"AI 报告字段 {field_path} 引用了未知 evidence_ref："
                 + "、".join(sorted(unknown_refs))
             )
+
+    if (
+        request.dataset_type == "aggregate_metrics"
+        and draft.growth_explanation is not None
+    ):
+        _validate_growth_explanation_driver(request, draft)
 
     for field_path, text in _draft_content_fields(draft):
         unsupported = _numeric_mentions(text) - allowed_mentions
@@ -1004,6 +1191,38 @@ def _validate_report_draft(
         raise AIReportProviderError(
             f"AI 报告字段 {field_path} 包含无法匹配 evidence_catalog 的"
             f"数字或单位：{formatted_mentions}。"
+        )
+
+
+def _validate_growth_explanation_driver(
+    request: AIReportRequest,
+    draft: AIReportDraft,
+) -> None:
+    explanation = _require(draft.growth_explanation, "growth_explanation")
+    referenced_indices = {
+        int(match.group(1))
+        for evidence in explanation.evidence
+        for reference in evidence.evidence_ref
+        if (
+            match := re.match(
+                r"^aggregate\.growth_attribution\[(\d+)\]\.",
+                reference,
+            )
+        )
+    }
+    if not referenced_indices:
+        raise AIReportProviderError(
+            "AI 增长来源分析必须引用 growth_attribution 证据。"
+        )
+    analysis = _require(request.aggregate_analysis, "aggregate_analysis")
+    valid_drivers = {
+        analysis.growth_attribution[index].growth_driver
+        for index in referenced_indices
+        if index < len(analysis.growth_attribution)
+    }
+    if explanation.growth_driver not in valid_drivers:
+        raise AIReportProviderError(
+            "AI 增长来源判断与 evidence_ref 对应的后端归因不一致。"
         )
 
 
@@ -1030,6 +1249,21 @@ def _hydrate_report_evidence(
 
     return AIReportResponse(
         core_conclusion=draft.core_conclusion,
+        growth_explanation=(
+            GrowthExplanation(
+                growth_driver=draft.growth_explanation.growth_driver,
+                why=draft.growth_explanation.why,
+                main_contribution=(
+                    draft.growth_explanation.main_contribution
+                ),
+                evidence=[
+                    hydrate(item)
+                    for item in draft.growth_explanation.evidence
+                ],
+            )
+            if draft.growth_explanation is not None
+            else None
+        ),
         key_issues=[
             KeyIssue(
                 issue=issue.issue,
@@ -1044,6 +1278,7 @@ def _hydrate_report_evidence(
                 action=action.action,
                 applicable_to=action.applicable_to,
                 reason=action.reason,
+                experiment=action.experiment,
                 target_metric=action.target_metric,
             )
             for action in draft.priority_actions
@@ -1062,6 +1297,25 @@ def _hydrate_report_evidence(
 
 def _draft_content_fields(draft: AIReportDraft) -> list[tuple[str, str]]:
     fields = [("core_conclusion", draft.core_conclusion)]
+    if draft.growth_explanation is not None:
+        fields.extend(
+            [
+                ("growth_explanation.why", draft.growth_explanation.why),
+                (
+                    "growth_explanation.main_contribution",
+                    draft.growth_explanation.main_contribution,
+                ),
+            ]
+        )
+        fields.extend(
+            (
+                f"growth_explanation.evidence[{index}].interpretation",
+                evidence.interpretation,
+            )
+            for index, evidence in enumerate(
+                draft.growth_explanation.evidence
+            )
+        )
     fields.extend(
         (f"limitations[{index}]", value)
         for index, value in enumerate(draft.limitations)
@@ -1088,6 +1342,7 @@ def _draft_content_fields(draft: AIReportDraft) -> list[tuple[str, str]]:
                 (prefix + ".action", action.action),
                 (prefix + ".applicable_to", action.applicable_to),
                 (prefix + ".reason", action.reason),
+                (prefix + ".experiment", action.experiment or ""),
                 (prefix + ".target_metric", action.target_metric),
             ]
         )

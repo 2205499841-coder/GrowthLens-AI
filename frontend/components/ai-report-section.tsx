@@ -24,6 +24,14 @@ const CONFIDENCE_LABELS: Record<ConfidenceLevel, string> = {
   low: "低置信度",
 };
 
+const GROWTH_DRIVER_LABELS = {
+  traffic: "流量规模扩大",
+  conversion: "转化效率改善",
+  combined: "流量与转化双重驱动",
+  mixed: "多因素方向不一致",
+  unavailable: "暂无法判断",
+} as const;
+
 export function AIReportSection({
   analysis,
   autoGenerate = false,
@@ -131,6 +139,26 @@ function AIReportContent({ report }: { report: AIReport }) {
         <p>{report.core_conclusion}</p>
       </div>
 
+      {report.growth_explanation ? (
+        <div className="growth-source-analysis">
+          <div>
+            <span>增长驱动</span>
+            <strong>
+              {GROWTH_DRIVER_LABELS[report.growth_explanation.growth_driver]}
+            </strong>
+          </div>
+          <div>
+            <span>原因</span>
+            <p>{report.growth_explanation.why}</p>
+          </div>
+          <div>
+            <span>主要贡献</span>
+            <p>{report.growth_explanation.main_contribution}</p>
+          </div>
+          <EvidenceList evidence={report.growth_explanation.evidence} compact />
+        </div>
+      ) : null}
+
       {report.key_issues.length ? (
         <div className="ai-report-block">
           <ReportBlockHeading
@@ -176,6 +204,12 @@ function AIReportContent({ report }: { report: AIReport }) {
                   <div>
                     <p>{item.action}</p>
                     <div className="action-reason">{item.reason}</div>
+                    {item.experiment ? (
+                      <div className="action-experiment">
+                        <strong>建议验证</strong>
+                        <span>{item.experiment}</span>
+                      </div>
+                    ) : null}
                     <div className="action-meta">
                       <strong>{item.applicable_to}</strong>
                       <span>{item.target_metric}</span>

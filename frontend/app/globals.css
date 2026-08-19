@@ -1133,6 +1133,43 @@ tbody tr:hover {
   max-width: 940px;
 }
 
+.growth-source-analysis {
+  background: #f7f9ff;
+  border-bottom: 1px solid #dce5fb;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(220px, 1.6fr) minmax(180px, 1fr);
+  padding: 18px 30px;
+}
+
+.growth-source-analysis > div {
+  display: grid;
+  gap: 6px;
+}
+
+.growth-source-analysis > div > span {
+  color: #71809e;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.growth-source-analysis strong,
+.growth-source-analysis p {
+  margin: 0;
+}
+
+.growth-source-analysis p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.growth-source-analysis > small {
+  color: #53617c;
+  grid-column: 1 / -1;
+}
+
 .ai-report-block {
   padding: 28px 30px;
 }
@@ -1400,6 +1437,20 @@ tbody tr:hover {
   font-size: 10px;
   line-height: 1.55;
   margin-top: 6px;
+}
+
+.action-experiment {
+  color: #53617c;
+  display: flex;
+  font-size: 10px;
+  gap: 7px;
+  line-height: 1.55;
+  margin-top: 7px;
+}
+
+.action-experiment strong {
+  color: var(--brand);
+  white-space: nowrap;
 }
 
 .action-meta {
@@ -1915,6 +1966,11 @@ tbody tr:hover {
     gap: 10px;
     grid-template-columns: 1fr;
     padding: 24px 22px;
+  }
+
+  .growth-source-analysis {
+    grid-template-columns: 1fr;
+    padding: 18px 20px;
   }
 
   .ai-report-block {

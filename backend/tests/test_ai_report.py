@@ -59,6 +59,7 @@ def test_user_level_endpoint_returns_unified_report(monkeypatch) -> None:
     assert len(report["key_issues"]) <= 3
     assert len(report["priority_actions"]) <= 3
     assert len(report["opportunities"]) <= 2
+    assert all("experiment" not in item for item in report["priority_actions"])
     assert all(
         evidence["evidence_ref"]
         for issue in report["key_issues"]
@@ -81,9 +82,12 @@ def test_aggregate_endpoint_returns_unified_report(monkeypatch) -> None:
     assert response.status_code == 200
     report = response.json()
     assert report["core_conclusion"]
+    assert report["growth_explanation"]["growth_driver"] == "conversion"
+    assert report["growth_explanation"]["evidence"][0]["display_values"]
     assert 1 <= len(report["key_issues"]) <= 3
     assert len(report["priority_actions"]) <= 3
     assert len(report["opportunities"]) <= 2
+    assert all(item["experiment"] for item in report["priority_actions"])
 
 
 def test_ai_report_endpoint_reports_missing_deepseek_key(
@@ -242,6 +246,9 @@ def test_aggregate_model_input_is_structured_and_excludes_raw_excel() -> None:
         "dimension_performance",
         "dimension_diagnosis",
         "business_insights",
+        "growth_attribution",
+        "user_scale_analysis",
+        "funnel_contribution_analysis",
         "funnel_summary",
         "detected_anomalies",
         "data_limitations",
@@ -252,6 +259,52 @@ def test_aggregate_model_input_is_structured_and_excludes_raw_excel() -> None:
     assert "file_name" not in model_input
     assert "raw_rows" not in model_input
     assert ".xlsx" not in model_input
+
+
+def test_growth_explanation_driver_must_match_attribution_evidence() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    explanation = draft.growth_explanation
+    assert explanation is not None
+    invalid_explanation = explanation.model_copy(
+        update={"growth_driver": "traffic"}
+    )
+
+    with pytest.raises(
+        AIReportProviderError,
+        match="增长来源判断.*不一致",
+    ):
+        generate_ai_report(
+            request,
+            provider=StaticProvider(
+                draft.model_copy(
+                    update={"growth_explanation": invalid_explanation}
+                )
+            ),
+        )
+
+
+def test_growth_explanation_rejects_fabricated_number() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    explanation = draft.growth_explanation
+    assert explanation is not None
+    invalid_explanation = explanation.model_copy(
+        update={"why": explanation.why + "预计再提升99%。"}
+    )
+
+    with pytest.raises(
+        AIReportProviderError,
+        match=r"growth_explanation\.why.*99%",
+    ):
+        generate_ai_report(
+            request,
+            provider=StaticProvider(
+                draft.model_copy(
+                    update={"growth_explanation": invalid_explanation}
+                )
+            ),
+        )
 
 
 def test_ai_report_request_rejects_raw_data_fields() -> None:
@@ -497,10 +550,19 @@ def _aggregate_workbook_bytes() -> bytes:
         "支付转化率环比偏差（百分点）",
         "商详→预约同比偏差（百分点）",
         "预约→SKU同比偏差（百分点）",
+        "同期浏览用户数",
+        "同期预约用户数",
+        "同期支付用户数",
     ]
     rows = [
-        ["品类甲", 1000, 800, 400, 300, 250, 200, 150, 0.04, 0.01, -0.0742, 0.2463],
-        ["品类乙", 600, 500, 300, 240, 210, 180, 150, 0.02, 0.01, -0.02, 0.05],
+        [
+            "品类甲", 1000, 800, 400, 300, 250, 200, 150,
+            0.04, 0.01, -0.0742, 0.2463, 1000, 380, 120,
+        ],
+        [
+            "品类乙", 600, 500, 300, 240, 210, 180, 150,
+            0.02, 0.01, -0.02, 0.05, 550, 270, 130,
+        ],
     ]
     workbook = Workbook()
     worksheet = workbook.active

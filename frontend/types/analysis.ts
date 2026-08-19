@@ -146,6 +146,15 @@ export interface DimensionPerformance {
     | "percentage_point"
     | "absolute_change"
     | null;
+  scale_changes: Array<{
+    metric_key: string;
+    label: string;
+    current_value: number | null;
+    yoy_change: number | null;
+    yoy_unit: "ratio_change" | "absolute_change" | null;
+    mom_change: number | null;
+    mom_unit: "ratio_change" | "absolute_change" | null;
+  }>;
   supplemental_outcomes: Array<{
     metric_key: string;
     label: string;
@@ -238,6 +247,39 @@ export interface AggregateBusinessInsight {
   priority: DimensionDiagnosisLevel;
 }
 
+export interface DimensionGrowthAttribution {
+  dimension_value: string;
+  traffic_change: {
+    browse_users_yoy: number | null;
+    booking_users_yoy: number | null;
+    payment_users_yoy: number | null;
+    unit: "ratio_change" | null;
+  };
+  conversion_change: {
+    payment_rate_change: number | null;
+    unit: "ratio_change" | "percentage_point" | null;
+  };
+  user_scale_analysis: {
+    traffic_trend: "growth" | "decline" | "stable" | "unavailable";
+    booking_user_trend: "growth" | "decline" | "stable" | "unavailable";
+    payment_user_trend: "growth" | "decline" | "stable" | "unavailable";
+    scale_contribution: "positive" | "negative" | "neutral" | "unavailable";
+  };
+  funnel_contribution_analysis: {
+    primary_contribution_stage: string | null;
+    primary_drag_stage: string | null;
+    weakest_stage: string | null;
+  };
+  growth_driver:
+    | "traffic"
+    | "conversion"
+    | "combined"
+    | "mixed"
+    | "unavailable";
+  driver_explanation: string;
+  limitations: string[];
+}
+
 export type DimensionDiagnosisLevel =
   | "high_priority"
   | "attention"
@@ -320,6 +362,7 @@ export interface AggregateAnalysisResult {
   diagnostics: AggregateDiagnostic[];
   opportunities: AggregateOpportunity[];
   business_insights: AggregateBusinessInsight[];
+  growth_attribution: DimensionGrowthAttribution[];
 }
 
 export interface DatasetPlaceholderResult {

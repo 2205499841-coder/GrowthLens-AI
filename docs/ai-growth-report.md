@@ -19,14 +19,23 @@ AI 报告模块不读取 Excel 文件或原始业务明细，只接收后端已�
 报告使用固定结构输出：
 
 - `core_conclusion`：一段核心业务结论；
+- `growth_explanation`：聚合经营报表的增长来源、主要贡献和证据；
 - `key_issues`：最多 3 条重点问题、证据、影响和置信度；
-- `priority_actions`：最多 3 条建议动作、适用对象、原因和目标指标；
+- `priority_actions`：最多 3 条建议动作、适用对象、原因、验证方案和目标指标；
 - `opportunities`：最多 2 条增长机会；
 - `limitations`：数据限制。
 
 模型只为每条证据返回 `evidence_ref` 和不含数字的 `interpretation`。
 服务端检查引用后，按引用顺序注入 `display_values`；数字和单位不再由模型
 自由生成。一条证据可引用多个后端字段。
+
+聚合经营报表会先经过规则化增长归因层，使用已识别的浏览、预约、支付用户
+同比变化以及支付转化率变化，输出 `traffic`、`conversion`、`combined`、
+`mixed` 或 `unavailable`。只有流量和支付规模比较口径同时存在时才判断增长
+来源；缺少同比数据时明确降级，不根据单一转化率推断支付用户增长。
+
+AI 只解释后端已经确定的归因类型。归因数字仍通过 `evidence_ref` 引用并由
+服务端注入，模型不能自行计算、缩写或更换单位。
 
 ## Prompt 设计
 

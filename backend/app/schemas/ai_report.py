@@ -74,6 +74,7 @@ class DraftPriorityAction(StrictSchema):
     action: str = Field(min_length=1)
     applicable_to: str = Field(min_length=1)
     reason: str = Field(min_length=1)
+    experiment: str | None = None
     target_metric: str = Field(min_length=1)
 
 
@@ -83,8 +84,22 @@ class DraftGrowthOpportunity(StrictSchema):
     recommendation: str = Field(min_length=1)
 
 
+class DraftGrowthExplanation(StrictSchema):
+    growth_driver: Literal[
+        "traffic",
+        "conversion",
+        "combined",
+        "mixed",
+        "unavailable",
+    ]
+    why: str = Field(min_length=1)
+    main_contribution: str = Field(min_length=1)
+    evidence: list[DraftReportEvidence] = Field(min_length=1, max_length=3)
+
+
 class AIReportDraft(StrictSchema):
     core_conclusion: str = Field(min_length=1, max_length=240)
+    growth_explanation: DraftGrowthExplanation | None = None
     key_issues: list[DraftKeyIssue] = Field(default_factory=list, max_length=3)
     priority_actions: list[DraftPriorityAction] = Field(
         default_factory=list,
@@ -114,6 +129,10 @@ class PriorityAction(StrictSchema):
     action: str = Field(min_length=1)
     applicable_to: str = Field(min_length=1)
     reason: str = Field(min_length=1)
+    experiment: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     target_metric: str = Field(min_length=1)
 
 
@@ -123,8 +142,25 @@ class GrowthOpportunity(StrictSchema):
     recommendation: str = Field(min_length=1)
 
 
+class GrowthExplanation(StrictSchema):
+    growth_driver: Literal[
+        "traffic",
+        "conversion",
+        "combined",
+        "mixed",
+        "unavailable",
+    ]
+    why: str = Field(min_length=1)
+    main_contribution: str = Field(min_length=1)
+    evidence: list[ReportEvidence] = Field(min_length=1, max_length=3)
+
+
 class AIReportResponse(StrictSchema):
     core_conclusion: str = Field(min_length=1, max_length=240)
+    growth_explanation: GrowthExplanation | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     key_issues: list[KeyIssue] = Field(default_factory=list, max_length=3)
     priority_actions: list[PriorityAction] = Field(
         default_factory=list,

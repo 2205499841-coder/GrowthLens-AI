@@ -17,6 +17,7 @@ export interface PriorityAction {
   action: string;
   applicable_to: string;
   reason: string;
+  experiment?: string | null;
   target_metric: string;
 }
 
@@ -26,8 +27,21 @@ export interface GrowthOpportunity {
   recommendation: string;
 }
 
+export interface GrowthExplanation {
+  growth_driver:
+    | "traffic"
+    | "conversion"
+    | "combined"
+    | "mixed"
+    | "unavailable";
+  why: string;
+  main_contribution: string;
+  evidence: ReportEvidence[];
+}
+
 export interface AIReport {
   core_conclusion: string;
+  growth_explanation?: GrowthExplanation | null;
   key_issues: KeyIssue[];
   priority_actions: PriorityAction[];
   opportunities: GrowthOpportunity[];

@@ -2,6 +2,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.growth_attribution import (
+    DimensionGrowthAttribution,
+    ScaleMetricChange,
+)
+
 
 AnalysisStatus = Literal["ready", "partial"]
 ConfidenceLevel = Literal["high", "medium", "low"]
@@ -171,6 +176,7 @@ class DimensionPerformance(StrictSchema):
         "percentage_point",
         "absolute_change",
     ] | None
+    scale_changes: list[ScaleMetricChange] = Field(default_factory=list)
     supplemental_outcomes: list[SupplementalOutcomeMetric]
 
 
@@ -285,3 +291,6 @@ class AggregateAnalysisResponse(StrictSchema):
     diagnostics: list[AggregateDiagnostic]
     opportunities: list[AggregateOpportunity]
     business_insights: list[AggregateBusinessInsight]
+    growth_attribution: list[DimensionGrowthAttribution] = Field(
+        default_factory=list
+    )

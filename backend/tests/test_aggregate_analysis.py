@@ -365,6 +365,31 @@ def test_stage_comparison_can_be_derived_from_prior_period_counts() -> None:
     assert stages[1].mom_delta == pytest.approx(0.0)
 
 
+def test_growth_attribution_uses_prior_period_scale_counts() -> None:
+    content = _workbook_bytes(
+        [
+            "品类",
+            "浏览用户数",
+            "预约用户数",
+            "支付用户数",
+            "同期浏览用户数",
+            "同期预约用户数",
+            "同期支付用户数",
+            "支付转化率同比偏差（百分点）",
+        ],
+        [["品类A", 1100, 360, 180, 1000, 300, 150, 0.0136]],
+        percent_columns=(8,),
+    )
+
+    result = _analyze(content)
+    attribution = result.growth_attribution[0]
+
+    assert attribution.traffic_change.browse_users_yoy == pytest.approx(0.1)
+    assert attribution.traffic_change.booking_users_yoy == pytest.approx(0.2)
+    assert attribution.traffic_change.payment_users_yoy == pytest.approx(0.2)
+    assert attribution.growth_driver == "combined"
+
+
 def test_selects_largest_improving_and_declining_stages() -> None:
     content = _workbook_bytes(
         _diagnostic_headers(),

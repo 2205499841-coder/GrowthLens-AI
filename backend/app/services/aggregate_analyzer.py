@@ -10,7 +10,12 @@ from typing import Any, Callable, Iterable
 import pandas as pd
 from openpyxl import load_workbook
 
-from app.schemas.aggregate_analysis import AggregateAnalysisResponse
+from app.schemas.aggregate_analysis import (
+    AggregateAnalysisResponse,
+    DimensionFunnelDiagnosis,
+    DimensionPerformance,
+)
+from app.services.growth_attribution import build_growth_attribution
 from app.services.schema_mapper import ExtractedExcelSchema
 
 
@@ -528,6 +533,13 @@ def analyze_aggregate_excel(
         opportunities,
         dimension_performance,
     )
+    growth_attribution = build_growth_attribution(
+        [DimensionPerformance.model_validate(item) for item in dimension_performance],
+        [
+            DimensionFunnelDiagnosis.model_validate(item)
+            for item in dimension_funnel_diagnostics
+        ],
+    )
 
     recognized_column_count = len(
         {field.source_column for field in semantic_fields}
@@ -620,6 +632,7 @@ def analyze_aggregate_excel(
             "diagnostics": diagnostics,
             "opportunities": opportunities,
             "business_insights": business_insights,
+            "growth_attribution": growth_attribution,
         }
     )
 
@@ -1382,6 +1395,12 @@ def _build_dimension_performance(
                 "mom": mom,
                 "yoy_unit": yoy_unit,
                 "mom_unit": mom_unit,
+                "scale_changes": _build_scale_changes(
+                    row,
+                    metric_lookup,
+                    comparison_lookup,
+                    number_formats,
+                ),
                 "supplemental_outcomes": _build_supplemental_outcomes(
                     row,
                     metric_lookup,
@@ -1390,6 +1409,65 @@ def _build_dimension_performance(
             }
         )
     return performance
+
+
+def _build_scale_changes(
+    row: pd.Series,
+    metric_lookup: dict[str, _SemanticField],
+    comparison_lookup: dict[
+        tuple[str | None, str | None],
+        list[_SemanticField],
+    ],
+    number_formats: dict[str, tuple[str, ...]],
+) -> list[dict[str, Any]]:
+    changes: list[dict[str, Any]] = []
+    for metric_key, label in (
+        ("traffic_users", "浏览用户"),
+        ("appointment_users", "预约用户"),
+        ("payment_users", "支付用户"),
+    ):
+        metric = metric_lookup.get(metric_key)
+        current_value = (
+            _as_int(_metric_value(row, metric, number_formats))
+            if metric is not None
+            else None
+        )
+        yoy, yoy_unit = _resolve_comparison_for_target(
+            row,
+            metric_key,
+            "yoy",
+            metric,
+            comparison_lookup,
+            number_formats,
+        )
+        mom, mom_unit = _resolve_comparison_for_target(
+            row,
+            metric_key,
+            "mom",
+            metric,
+            comparison_lookup,
+            number_formats,
+        )
+        supported_yoy_unit = (
+            yoy_unit if yoy_unit in {"ratio_change", "absolute_change"} else None
+        )
+        supported_mom_unit = (
+            mom_unit if mom_unit in {"ratio_change", "absolute_change"} else None
+        )
+        if current_value is None and yoy is None and mom is None:
+            continue
+        changes.append(
+            {
+                "metric_key": metric_key,
+                "label": label,
+                "current_value": current_value,
+                "yoy_change": yoy if supported_yoy_unit else None,
+                "yoy_unit": supported_yoy_unit,
+                "mom_change": mom if supported_mom_unit else None,
+                "mom_unit": supported_mom_unit,
+            }
+        )
+    return changes
 
 
 def _build_supplemental_outcomes(
