@@ -146,6 +146,7 @@ function AIReportContent({ report }: { report: AIReport }) {
             <strong>
               {GROWTH_DRIVER_LABELS[report.growth_explanation.growth_driver]}
             </strong>
+            <small>分析对象：{report.growth_explanation.dimension_value}</small>
           </div>
           <div>
             <span>原因</span>

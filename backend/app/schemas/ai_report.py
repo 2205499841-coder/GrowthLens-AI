@@ -84,14 +84,11 @@ class DraftGrowthOpportunity(StrictSchema):
     recommendation: str = Field(min_length=1)
 
 
-class DraftGrowthExplanation(StrictSchema):
-    growth_driver: Literal[
-        "traffic",
-        "conversion",
-        "combined",
-        "mixed",
-        "unavailable",
-    ]
+class DraftGrowthExplanation(BaseModel):
+    # Legacy/model-supplied authority fields are intentionally ignored. The
+    # backend binds the dimension and injects its deterministic driver.
+    model_config = ConfigDict(extra="ignore")
+
     why: str = Field(min_length=1)
     main_contribution: str = Field(min_length=1)
     evidence: list[DraftReportEvidence] = Field(min_length=1, max_length=3)
@@ -143,6 +140,7 @@ class GrowthOpportunity(StrictSchema):
 
 
 class GrowthExplanation(StrictSchema):
+    dimension_value: str = Field(min_length=1)
     growth_driver: Literal[
         "traffic",
         "conversion",

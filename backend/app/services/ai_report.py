@@ -28,6 +28,9 @@ from app.schemas.analysis import FunnelStage, GrowthMetrics
 logger = logging.getLogger(__name__)
 
 MAX_AGGREGATE_DIMENSIONS = 20
+GROWTH_EXPLANATION_LIMITATION = (
+    "增长来源说明未能与后端归因安全绑定，本次未展示该区域。"
+)
 NUMBER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_])"
     r"([+-]?\d[\d,]*(?:\.\d+)?)\s*(个百分点|%|人|元)?"
@@ -37,9 +40,8 @@ NUMBER_PATTERN = re.compile(
 REPORT_JSON_EXAMPLE = {
     "core_conclusion": "引用真实业务信号的核心结论",
     "growth_explanation": {
-        "growth_driver": "conversion",
         "why": "不包含数字的增长来源解释",
-        "main_contribution": "主要贡献或抵消环节",
+        "main_contribution": "直接复制后端提供的贡献或拖累环节名称",
         "evidence": [
             {
                 "evidence_ref": ["输入中真实存在的 ref"],
@@ -92,11 +94,13 @@ SYSTEM_PROMPT = f"""你是 GrowthLens AI，一名面向增长运营人员的业�
 1. 只输出合法 JSON 对象，不要 Markdown、代码块或额外说明。
 2. 统一输出 core_conclusion、growth_explanation、key_issues、priority_actions、opportunities、limitations。user_level 的 growth_explanation 可以为 null。
 3. core_conclusion 只写一段，优先控制在 80—120 个中文字符，必须指出具体表现对象、问题节点或改善方向，禁止空泛总结。
-4. aggregate_metrics 必须基于 diagnostic_context.growth_attribution 回答支付用户变化主要伴随流量、转化效率还是双重变化，并指出主要贡献或抵消环节；不得只复述最终支付转化率。
+4. aggregate_metrics 必须基于 diagnostic_context.growth_attribution 解释支付用户变化，并指出后端已识别的主要贡献或抵消环节；不得只复述最终支付转化率。
 5. key_issues 最多 3 条；每条包含 issue、evidence、impact、confidence。
 6. priority_actions 最多 3 条；每条包含 action、applicable_to、reason、experiment、target_metric，并使用“建议验证”明确标识尚未被数据证明的原因或动作假设。动作必须同时关联问题节点、原因假设、验证方案和目标指标。
 7. opportunities 最多 2 条；优先使用后端已经识别的业务洞察和机会。
 8. evidence 中每条证据只输出 evidence_ref 和 interpretation。不得输出数字字段或自行撰写证据数值；后端会根据 evidence_ref 注入 display_value。
+9. 增长来源分类已经由后端确定。growth_explanation 不得输出、重新分类、覆盖或推断 dimension_value 和 growth_driver；最终字段由后端根据 evidence_ref 安全绑定并注入。
+10. main_contribution 必须直接使用 diagnostic_context.growth_attribution 中对应维度已有的贡献、拖累或最弱环节名称，并引用同一维度的阶段 evidence_ref。
 
 JSON 结构示例（只表示结构，不是可引用事实）：
 {json.dumps(REPORT_JSON_EXAMPLE, ensure_ascii=False, indent=2)}
@@ -639,6 +643,12 @@ def _build_mock_growth_explanation(
             f"aggregate.growth_attribution[{index}].traffic_change.payment_users_yoy",
             f"aggregate.growth_attribution[{index}].conversion_change.payment_rate_change",
         ]
+        stage_reference = _growth_explanation_stage_reference(
+            analysis,
+            attribution.dimension_value,
+        )
+        if stage_reference:
+            refs.append(stage_reference)
         available_refs = [reference for reference in refs if reference in facts]
         if not available_refs:
             continue
@@ -649,16 +659,59 @@ def _build_mock_growth_explanation(
             or "流量规模与支付转化效率的相对变化"
         )
         return DraftGrowthExplanation(
-            growth_driver=attribution.growth_driver,
             why=attribution.driver_explanation,
             main_contribution=main_contribution,
             evidence=[
                 DraftReportEvidence(
-                    evidence_ref=available_refs[:3],
+                    evidence_ref=available_refs[:4],
                     interpretation="增长来源判断基于后端验证的规模与效率变化。",
                 )
             ],
         )
+    return None
+
+
+def _growth_explanation_stage_reference(
+    analysis,
+    dimension_value: str,
+) -> str | None:
+    for diagnosis_index, diagnosis in enumerate(
+        analysis.dimension_funnel_diagnostics
+    ):
+        if diagnosis.dimension_value != dimension_value:
+            continue
+        candidates = (
+            diagnosis.best_improving_stage,
+            diagnosis.largest_declining_stage,
+        )
+        for movement in candidates:
+            if movement is None:
+                continue
+            for stage_index, stage in enumerate(diagnosis.stages):
+                if (
+                    stage.from_metric_key == movement.from_metric_key
+                    and stage.to_metric_key == movement.to_metric_key
+                ):
+                    field_name = (
+                        "yoy_delta"
+                        if movement.comparison == "yoy"
+                        else "mom_delta"
+                    )
+                    return (
+                        f"aggregate.dimension_diagnosis[{diagnosis_index}]"
+                        f".stages[{stage_index}].{field_name}"
+                    )
+        if diagnosis.weakest_stage is not None:
+            weakest = diagnosis.weakest_stage
+            for stage_index, stage in enumerate(diagnosis.stages):
+                if (
+                    stage.from_metric_key == weakest.from_metric_key
+                    and stage.to_metric_key == weakest.to_metric_key
+                ):
+                    return (
+                        f"aggregate.dimension_diagnosis[{diagnosis_index}]"
+                        f".stages[{stage_index}].current_conversion_rate"
+                    )
     return None
 
 
@@ -1124,16 +1177,6 @@ def _validate_report_draft(
     facts = _build_evidence_catalog(request)
     fact_lookup = {fact.reference: fact for fact in facts}
     if request.dataset_type == "aggregate_metrics":
-        analysis = _require(request.aggregate_analysis, "aggregate_analysis")
-        attributable = [
-            item
-            for item in analysis.growth_attribution
-            if item.growth_driver != "unavailable"
-        ]
-        if attributable and draft.growth_explanation is None:
-            raise AIReportProviderError(
-                "AI 报告缺少 aggregate_metrics 增长来源分析。"
-            )
         if any(action.experiment is None for action in draft.priority_actions):
             raise AIReportProviderError(
                 "AI 报告的聚合经营建议缺少验证方案。"
@@ -1152,16 +1195,6 @@ def _validate_report_draft(
         for opportunity_index, opportunity in enumerate(draft.opportunities)
         for evidence_index, evidence in enumerate(opportunity.evidence)
     ]
-    if draft.growth_explanation is not None:
-        evidence_items.extend(
-            (
-                f"growth_explanation.evidence[{evidence_index}]",
-                evidence,
-            )
-            for evidence_index, evidence in enumerate(
-                draft.growth_explanation.evidence
-            )
-        )
     for field_path, evidence in evidence_items:
         unknown_refs = set(evidence.evidence_ref) - set(fact_lookup)
         if unknown_refs:
@@ -1169,12 +1202,6 @@ def _validate_report_draft(
                 f"AI 报告字段 {field_path} 引用了未知 evidence_ref："
                 + "、".join(sorted(unknown_refs))
             )
-
-    if (
-        request.dataset_type == "aggregate_metrics"
-        and draft.growth_explanation is not None
-    ):
-        _validate_growth_explanation_driver(request, draft)
 
     for field_path, text in _draft_content_fields(draft):
         unsupported = _numeric_mentions(text) - allowed_mentions
@@ -1191,38 +1218,6 @@ def _validate_report_draft(
         raise AIReportProviderError(
             f"AI 报告字段 {field_path} 包含无法匹配 evidence_catalog 的"
             f"数字或单位：{formatted_mentions}。"
-        )
-
-
-def _validate_growth_explanation_driver(
-    request: AIReportRequest,
-    draft: AIReportDraft,
-) -> None:
-    explanation = _require(draft.growth_explanation, "growth_explanation")
-    referenced_indices = {
-        int(match.group(1))
-        for evidence in explanation.evidence
-        for reference in evidence.evidence_ref
-        if (
-            match := re.match(
-                r"^aggregate\.growth_attribution\[(\d+)\]\.",
-                reference,
-            )
-        )
-    }
-    if not referenced_indices:
-        raise AIReportProviderError(
-            "AI 增长来源分析必须引用 growth_attribution 证据。"
-        )
-    analysis = _require(request.aggregate_analysis, "aggregate_analysis")
-    valid_drivers = {
-        analysis.growth_attribution[index].growth_driver
-        for index in referenced_indices
-        if index < len(analysis.growth_attribution)
-    }
-    if explanation.growth_driver not in valid_drivers:
-        raise AIReportProviderError(
-            "AI 增长来源判断与 evidence_ref 对应的后端归因不一致。"
         )
 
 
@@ -1247,23 +1242,19 @@ def _hydrate_report_evidence(
             interpretation=evidence.interpretation,
         )
 
+    growth_explanation, growth_limitation = _hydrate_growth_explanation(
+        request,
+        draft,
+        fact_lookup,
+        hydrate,
+    )
+    limitations = list(draft.limitations)
+    if growth_limitation and growth_limitation not in limitations:
+        limitations = [*limitations[:4], growth_limitation]
+
     return AIReportResponse(
         core_conclusion=draft.core_conclusion,
-        growth_explanation=(
-            GrowthExplanation(
-                growth_driver=draft.growth_explanation.growth_driver,
-                why=draft.growth_explanation.why,
-                main_contribution=(
-                    draft.growth_explanation.main_contribution
-                ),
-                evidence=[
-                    hydrate(item)
-                    for item in draft.growth_explanation.evidence
-                ],
-            )
-            if draft.growth_explanation is not None
-            else None
-        ),
+        growth_explanation=growth_explanation,
         key_issues=[
             KeyIssue(
                 issue=issue.issue,
@@ -1291,31 +1282,198 @@ def _hydrate_report_evidence(
             )
             for opportunity in draft.opportunities
         ],
-        limitations=draft.limitations,
+        limitations=limitations,
     )
+
+
+def _hydrate_growth_explanation(
+    request: AIReportRequest,
+    draft: AIReportDraft,
+    fact_lookup: dict[str, EvidenceFact],
+    hydrate,
+) -> tuple[GrowthExplanation | None, str | None]:
+    if request.dataset_type != "aggregate_metrics":
+        return None, None
+    explanation = draft.growth_explanation
+    if explanation is None:
+        return None, GROWTH_EXPLANATION_LIMITATION
+
+    references = [
+        reference
+        for evidence in explanation.evidence
+        for reference in evidence.evidence_ref
+    ]
+    unknown_refs = set(references) - set(fact_lookup)
+    if unknown_refs:
+        return _drop_growth_explanation(
+            "unknown evidence_ref=" + ",".join(sorted(unknown_refs))
+        )
+
+    attribution_indices = {
+        int(match.group(1))
+        for reference in references
+        if (
+            match := re.match(
+                r"^aggregate\.growth_attribution\[(\d+)\]\.",
+                reference,
+            )
+        )
+    }
+    analysis = _require(request.aggregate_analysis, "aggregate_analysis")
+    if len(attribution_indices) != 1:
+        return _drop_growth_explanation(
+            "growth attribution reference must bind exactly one dimension"
+        )
+    attribution_index = next(iter(attribution_indices))
+    if attribution_index >= len(analysis.growth_attribution):
+        return _drop_growth_explanation("growth attribution index out of range")
+    attribution = analysis.growth_attribution[attribution_index]
+    dimension_value = attribution.dimension_value
+
+    referenced_dimensions = {
+        value
+        for reference in references
+        if (
+            value := _aggregate_reference_dimension(
+                analysis,
+                reference,
+            )
+        )
+    }
+    if referenced_dimensions != {dimension_value}:
+        return _drop_growth_explanation(
+            "evidence references cross aggregate dimensions"
+        )
+
+    allowed_contributions = {
+        value
+        for value in (
+            attribution.funnel_contribution_analysis.primary_contribution_stage,
+            attribution.funnel_contribution_analysis.primary_drag_stage,
+            attribution.funnel_contribution_analysis.weakest_stage,
+        )
+        if value
+    }
+    if allowed_contributions:
+        if explanation.main_contribution not in allowed_contributions:
+            return _drop_growth_explanation(
+                "main contribution is not a backend funnel contribution"
+            )
+        if not _has_matching_stage_reference(
+            analysis,
+            references,
+            dimension_value,
+            explanation.main_contribution,
+        ):
+            return _drop_growth_explanation(
+                "main contribution lacks matching stage evidence_ref"
+            )
+    elif explanation.main_contribution != (
+        "流量规模与支付转化效率的相对变化"
+    ):
+        return _drop_growth_explanation(
+            "main contribution is unavailable in backend attribution"
+        )
+
+    allowed_mentions = {
+        mention
+        for reference in references
+        for mention in _numeric_mentions(fact_lookup[reference].display_value)
+    }
+    for field_path, text in _growth_explanation_content_fields(explanation):
+        unsupported = _numeric_mentions(text) - allowed_mentions
+        if unsupported:
+            return _drop_growth_explanation(
+                f"{field_path} contains unsupported numbers"
+            )
+
+    return (
+        GrowthExplanation(
+            dimension_value=dimension_value,
+            growth_driver=attribution.growth_driver,
+            why=explanation.why,
+            main_contribution=explanation.main_contribution,
+            evidence=[hydrate(item) for item in explanation.evidence],
+        ),
+        None,
+    )
+
+
+def _drop_growth_explanation(
+    reason: str,
+) -> tuple[None, str]:
+    logger.warning("AI 增长来源说明已降级：%s", reason)
+    return None, GROWTH_EXPLANATION_LIMITATION
+
+
+def _aggregate_reference_dimension(analysis, reference: str) -> str | None:
+    reference_groups = (
+        ("growth_attribution", analysis.growth_attribution),
+        ("dimension_performance", analysis.dimension_performance),
+        ("dimension_diagnosis", analysis.dimension_funnel_diagnostics),
+        ("business_insights", analysis.business_insights),
+        ("diagnostics", analysis.diagnostics),
+        ("opportunities", analysis.opportunities),
+    )
+    for group_name, items in reference_groups:
+        match = re.match(rf"^aggregate\.{group_name}\[(\d+)\]", reference)
+        if not match:
+            continue
+        index = int(match.group(1))
+        if index >= len(items):
+            return None
+        return getattr(items[index], "dimension_value", None)
+    return None
+
+
+def _has_matching_stage_reference(
+    analysis,
+    references: list[str],
+    dimension_value: str,
+    contribution: str,
+) -> bool:
+    for reference in references:
+        match = re.match(
+            r"^aggregate\.dimension_diagnosis\[(\d+)\]"
+            r"\.stages\[(\d+)\]\.",
+            reference,
+        )
+        if not match:
+            continue
+        diagnosis_index, stage_index = map(int, match.groups())
+        if diagnosis_index >= len(analysis.dimension_funnel_diagnostics):
+            continue
+        diagnosis = analysis.dimension_funnel_diagnostics[diagnosis_index]
+        if (
+            diagnosis.dimension_value != dimension_value
+            or stage_index >= len(diagnosis.stages)
+        ):
+            continue
+        stage = diagnosis.stages[stage_index]
+        if f"{stage.from_label}→{stage.to_label}" == contribution:
+            return True
+    return False
+
+
+def _growth_explanation_content_fields(
+    explanation: DraftGrowthExplanation,
+) -> list[tuple[str, str]]:
+    fields = [
+        ("growth_explanation.why", explanation.why),
+        ("growth_explanation.main_contribution", explanation.main_contribution),
+    ]
+    fields.extend(
+        (
+            f"growth_explanation.evidence[{index}].interpretation",
+            evidence.interpretation,
+        )
+        for index, evidence in enumerate(explanation.evidence)
+    )
+    return fields
 
 
 def _draft_content_fields(draft: AIReportDraft) -> list[tuple[str, str]]:
     fields = [("core_conclusion", draft.core_conclusion)]
-    if draft.growth_explanation is not None:
-        fields.extend(
-            [
-                ("growth_explanation.why", draft.growth_explanation.why),
-                (
-                    "growth_explanation.main_contribution",
-                    draft.growth_explanation.main_contribution,
-                ),
-            ]
-        )
-        fields.extend(
-            (
-                f"growth_explanation.evidence[{index}].interpretation",
-                evidence.interpretation,
-            )
-            for index, evidence in enumerate(
-                draft.growth_explanation.evidence
-            )
-        )
     fields.extend(
         (f"limitations[{index}]", value)
         for index, value in enumerate(draft.limitations)

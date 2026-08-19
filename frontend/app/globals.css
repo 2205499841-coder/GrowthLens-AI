@@ -1159,6 +1159,11 @@ tbody tr:hover {
   margin: 0;
 }
 
+.growth-source-analysis div small {
+  color: #71809e;
+  font-size: 10px;
+}
+
 .growth-source-analysis p {
   color: var(--muted);
   font-size: 12px;

@@ -28,6 +28,7 @@ export interface GrowthOpportunity {
 }
 
 export interface GrowthExplanation {
+  dimension_value: string;
   growth_driver:
     | "traffic"
     | "conversion"

@@ -11,7 +11,11 @@ from pydantic import ValidationError
 
 import app.services.ai_report as ai_report_service
 from app.main import app
-from app.schemas.ai_report import AIReportRequest, AIReportResponse
+from app.schemas.ai_report import (
+    AIReportRequest,
+    AIReportResponse,
+    DraftGrowthExplanation,
+)
 from app.services.aggregate_analyzer import analyze_aggregate_excel
 from app.services.ai_report import (
     AIReportProviderError,
@@ -82,6 +86,7 @@ def test_aggregate_endpoint_returns_unified_report(monkeypatch) -> None:
     assert response.status_code == 200
     report = response.json()
     assert report["core_conclusion"]
+    assert report["growth_explanation"]["dimension_value"] == "品类甲"
     assert report["growth_explanation"]["growth_driver"] == "conversion"
     assert report["growth_explanation"]["evidence"][0]["display_values"]
     assert 1 <= len(report["key_issues"]) <= 3
@@ -261,30 +266,108 @@ def test_aggregate_model_input_is_structured_and_excludes_raw_excel() -> None:
     assert ".xlsx" not in model_input
 
 
-def test_growth_explanation_driver_must_match_attribution_evidence() -> None:
+def test_growth_driver_is_injected_from_backend_conversion() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    report = generate_ai_report(request, provider=StaticProvider(draft))
+
+    assert report.growth_explanation is not None
+    assert report.growth_explanation.dimension_value == "品类甲"
+    assert report.growth_explanation.growth_driver == "conversion"
+
+
+def test_growth_driver_is_injected_from_backend_traffic() -> None:
+    request = _request_with_first_growth_driver("traffic")
+    draft = MockAIReportProvider().generate(request)
+    report = generate_ai_report(request, provider=StaticProvider(draft))
+
+    assert report.growth_explanation is not None
+    assert report.growth_explanation.dimension_value == "品类甲"
+    assert report.growth_explanation.growth_driver == "traffic"
+
+
+def test_growth_explanation_binds_second_dimension_without_crossing() -> None:
     request = _sample_aggregate_request()
     draft = MockAIReportProvider().generate(request)
     explanation = draft.growth_explanation
     assert explanation is not None
-    invalid_explanation = explanation.model_copy(
-        update={"growth_driver": "traffic"}
+    second_attribution = request.aggregate_analysis.growth_attribution[1]
+    stage_reference = ai_report_service._growth_explanation_stage_reference(
+        request.aggregate_analysis,
+        second_attribution.dimension_value,
+    )
+    assert stage_reference is not None
+    second_explanation = explanation.model_copy(
+        update={
+            "why": second_attribution.driver_explanation,
+            "main_contribution": (
+                second_attribution.funnel_contribution_analysis
+                .primary_contribution_stage
+            ),
+            "evidence": [
+                explanation.evidence[0].model_copy(
+                    update={
+                        "evidence_ref": [
+                            "aggregate.growth_attribution[1].traffic_change.browse_users_yoy",
+                            "aggregate.growth_attribution[1].traffic_change.payment_users_yoy",
+                            "aggregate.growth_attribution[1].conversion_change.payment_rate_change",
+                            stage_reference,
+                        ]
+                    }
+                )
+            ],
+        }
+    )
+    report = generate_ai_report(
+        request,
+        provider=StaticProvider(
+            draft.model_copy(update={"growth_explanation": second_explanation})
+        ),
     )
 
-    with pytest.raises(
-        AIReportProviderError,
-        match="增长来源判断.*不一致",
-    ):
-        generate_ai_report(
-            request,
-            provider=StaticProvider(
-                draft.model_copy(
-                    update={"growth_explanation": invalid_explanation}
-                )
-            ),
-        )
+    assert report.growth_explanation is not None
+    assert report.growth_explanation.dimension_value == "品类乙"
+    assert report.growth_explanation.growth_driver == "combined"
+    assert all(
+        "品类甲" not in value
+        for evidence in report.growth_explanation.evidence
+        for value in evidence.display_values
+    )
 
 
-def test_growth_explanation_rejects_fabricated_number() -> None:
+def test_cross_dimension_growth_explanation_degrades_report_only() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    explanation = draft.growth_explanation
+    assert explanation is not None
+    mixed_evidence = explanation.evidence[0].model_copy(
+        update={
+            "evidence_ref": [
+                "aggregate.growth_attribution[0].traffic_change.browse_users_yoy",
+                "aggregate.growth_attribution[1].traffic_change.payment_users_yoy",
+            ]
+        }
+    )
+    report = generate_ai_report(
+        request,
+        provider=StaticProvider(
+            draft.model_copy(
+                update={
+                    "growth_explanation": explanation.model_copy(
+                        update={"evidence": [mixed_evidence]}
+                    )
+                }
+            )
+        ),
+    )
+
+    assert report.growth_explanation is None
+    assert "增长来源说明未能与后端归因安全绑定" in report.limitations[-1]
+    assert report.key_issues
+    assert report.priority_actions
+
+
+def test_growth_explanation_fabricated_number_degrades_report_only() -> None:
     request = _sample_aggregate_request()
     draft = MockAIReportProvider().generate(request)
     explanation = draft.growth_explanation
@@ -293,18 +376,43 @@ def test_growth_explanation_rejects_fabricated_number() -> None:
         update={"why": explanation.why + "预计再提升99%。"}
     )
 
-    with pytest.raises(
-        AIReportProviderError,
-        match=r"growth_explanation\.why.*99%",
-    ):
-        generate_ai_report(
-            request,
-            provider=StaticProvider(
-                draft.model_copy(
-                    update={"growth_explanation": invalid_explanation}
-                )
-            ),
-        )
+    report = generate_ai_report(
+        request,
+        provider=StaticProvider(
+            draft.model_copy(
+                update={"growth_explanation": invalid_explanation}
+            )
+        ),
+    )
+
+    assert report.growth_explanation is None
+    assert "增长来源说明未能与后端归因安全绑定" in report.limitations[-1]
+    assert report.key_issues
+
+
+def test_model_supplied_growth_driver_cannot_override_backend() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    explanation_payload = draft.growth_explanation.model_dump(mode="json")
+    explanation_payload["growth_driver"] = "traffic"
+    explanation_payload["dimension_value"] = "品类乙"
+    attempted_override = DraftGrowthExplanation.model_validate(
+        explanation_payload
+    )
+
+    report = generate_ai_report(
+        request,
+        provider=StaticProvider(
+            draft.model_copy(
+                update={"growth_explanation": attempted_override}
+            )
+        ),
+    )
+
+    assert report.growth_explanation is not None
+    assert report.growth_explanation.dimension_value == "品类甲"
+    assert report.growth_explanation.growth_driver == "conversion"
+    assert not hasattr(attempted_override, "growth_driver")
 
 
 def test_ai_report_request_rejects_raw_data_fields() -> None:
@@ -533,6 +641,26 @@ def _sample_aggregate_request() -> AIReportRequest:
     return AIReportRequest(
         dataset_type="aggregate_metrics",
         aggregate_analysis=analysis,
+    )
+
+
+def _request_with_first_growth_driver(driver: str) -> AIReportRequest:
+    request = _sample_aggregate_request()
+    analysis = request.aggregate_analysis
+    assert analysis is not None
+    attributions = list(analysis.growth_attribution)
+    attributions[0] = attributions[0].model_copy(
+        update={
+            "growth_driver": driver,
+            "driver_explanation": "支付表现主要伴随流量规模扩大。",
+        }
+    )
+    return request.model_copy(
+        update={
+            "aggregate_analysis": analysis.model_copy(
+                update={"growth_attribution": attributions}
+            )
+        }
     )
 
 
