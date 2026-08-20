@@ -251,6 +251,8 @@ def test_aggregate_model_input_is_structured_and_excludes_raw_excel() -> None:
         "dimension_performance",
         "dimension_diagnosis",
         "business_insights",
+        "cross_metric_summary",
+        "cross_metric_diagnoses",
         "growth_attribution",
         "user_scale_analysis",
         "funnel_contribution_analysis",
@@ -264,6 +266,26 @@ def test_aggregate_model_input_is_structured_and_excludes_raw_excel() -> None:
     assert "file_name" not in model_input
     assert "raw_rows" not in model_input
     assert ".xlsx" not in model_input
+
+
+def test_aggregate_ai_uses_cross_metric_priority_and_dimension_only_scope() -> None:
+    request = _sample_aggregate_request()
+    analysis = request.aggregate_analysis
+    assert analysis is not None
+    assert analysis.cross_metric_summary is not None
+    assert analysis.cross_metric_summary.scope == "dimension_only"
+
+    report = generate_ai_report(request, provider=MockAIReportProvider())
+
+    assert report.core_conclusion.startswith("从主要品类表现看")
+    assert report.key_issues[0].issue.startswith(
+        analysis.cross_metric_diagnoses[0].dimension_value
+    )
+    if analysis.cross_metric_diagnoses[0].primary_bottleneck:
+        assert (
+            analysis.cross_metric_diagnoses[0].primary_bottleneck.stage
+            in report.key_issues[0].issue
+        )
 
 
 def test_growth_driver_is_injected_from_backend_conversion() -> None:
@@ -519,7 +541,10 @@ def test_backend_injects_exact_display_values_from_evidence_refs() -> None:
     evidence = report.key_issues[0].evidence[0]
 
     assert evidence.display_values == [
-        "支付转化率 15.00%；同比+4.00 个百分点；环比+1.00 个百分点"
+        "品类甲支付用户同比 +25.00%",
+        "品类甲浏览用户同比 0.00%",
+        "品类甲支付转化率同比 +4.00 个百分点",
+        "品类甲商详用户→预约用户同比 -7.42 个百分点",
     ]
     assert "15.00" not in evidence.interpretation
     assert "百分点" not in evidence.interpretation
@@ -531,10 +556,7 @@ def test_one_evidence_can_hydrate_multiple_refs_in_order() -> None:
     issue = draft.key_issues[0]
     combined_evidence = issue.evidence[0].model_copy(
         update={
-            "evidence_ref": [
-                issue.evidence[0].evidence_ref[0],
-                issue.evidence[1].evidence_ref[0],
-            ],
+            "evidence_ref": issue.evidence[0].evidence_ref[:2],
             "interpretation": "整体趋势改善，但主要拖累节点仍需验证。",
         }
     )
@@ -551,9 +573,55 @@ def test_one_evidence_can_hydrate_multiple_refs_in_order() -> None:
     )
 
     assert report.key_issues[0].evidence[0].display_values == [
-        "支付转化率 15.00%；同比+4.00 个百分点；环比+1.00 个百分点",
-        "最大拖累：商详→预约同比-7.42 个百分点",
+        "品类甲支付用户同比 +25.00%",
+        "品类甲浏览用户同比 0.00%",
     ]
+
+
+def test_aggregate_key_issues_follow_backend_priority_order() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    reversed_draft = draft.model_copy(
+        update={"key_issues": list(reversed(draft.key_issues))}
+    )
+
+    report = generate_ai_report(
+        request,
+        provider=StaticProvider(reversed_draft),
+    )
+
+    analysis = request.aggregate_analysis
+    assert analysis is not None
+    assert report.key_issues[0].issue.startswith(
+        analysis.cross_metric_diagnoses[0].dimension_value
+    )
+
+
+def test_aggregate_issue_rejects_cross_dimension_evidence_mix() -> None:
+    request = _sample_aggregate_request()
+    draft = MockAIReportProvider().generate(request)
+    first_issue, second_issue = draft.key_issues[:2]
+    mixed_evidence = first_issue.evidence[0].model_copy(
+        update={
+            "evidence_ref": [
+                first_issue.evidence[0].evidence_ref[0],
+                second_issue.evidence[0].evidence_ref[0],
+            ]
+        }
+    )
+    invalid_draft = draft.model_copy(
+        update={
+            "key_issues": [
+                first_issue.model_copy(update={"evidence": [mixed_evidence]})
+            ]
+        }
+    )
+
+    with pytest.raises(AIReportProviderError, match="混用了不同维度"):
+        generate_ai_report(
+            request,
+            provider=StaticProvider(invalid_draft),
+        )
 
 
 def test_analysis_endpoint_does_not_depend_on_ai_provider(monkeypatch) -> None:

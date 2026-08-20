@@ -16,6 +16,10 @@ from app.schemas.aggregate_analysis import (
     DimensionPerformance,
 )
 from app.services.growth_attribution import build_growth_attribution
+from app.services.cross_metric_diagnosis import (
+    build_cross_metric_diagnoses,
+    build_cross_metric_summary,
+)
 from app.services.schema_mapper import ExtractedExcelSchema
 
 
@@ -540,6 +544,18 @@ def analyze_aggregate_excel(
             for item in dimension_funnel_diagnostics
         ],
     )
+    cross_metric_diagnoses = build_cross_metric_diagnoses(
+        [DimensionPerformance.model_validate(item) for item in dimension_performance],
+        [
+            DimensionFunnelDiagnosis.model_validate(item)
+            for item in dimension_funnel_diagnostics
+        ],
+        growth_attribution,
+    )
+    cross_metric_summary = build_cross_metric_summary(
+        cross_metric_diagnoses,
+        has_safe_overall_scope=scope_row is not None,
+    )
 
     recognized_column_count = len(
         {field.source_column for field in semantic_fields}
@@ -633,6 +649,8 @@ def analyze_aggregate_excel(
             "opportunities": opportunities,
             "business_insights": business_insights,
             "growth_attribution": growth_attribution,
+            "cross_metric_diagnoses": cross_metric_diagnoses,
+            "cross_metric_summary": cross_metric_summary,
         }
     )
 

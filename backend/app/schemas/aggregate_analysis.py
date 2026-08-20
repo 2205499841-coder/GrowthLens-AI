@@ -6,6 +6,10 @@ from app.schemas.growth_attribution import (
     DimensionGrowthAttribution,
     ScaleMetricChange,
 )
+from app.schemas.cross_metric_diagnosis import (
+    CrossMetricDiagnosis,
+    CrossMetricSummary,
+)
 
 
 AnalysisStatus = Literal["ready", "partial"]
@@ -294,3 +298,7 @@ class AggregateAnalysisResponse(StrictSchema):
     growth_attribution: list[DimensionGrowthAttribution] = Field(
         default_factory=list
     )
+    cross_metric_diagnoses: list[CrossMetricDiagnosis] = Field(
+        default_factory=list
+    )
+    cross_metric_summary: CrossMetricSummary | None = None

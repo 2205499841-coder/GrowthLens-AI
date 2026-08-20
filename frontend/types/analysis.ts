@@ -280,6 +280,98 @@ export interface DimensionGrowthAttribution {
   limitations: string[];
 }
 
+export type CrossMetricDiagnosisPattern =
+  | "traffic_down_conversion_up"
+  | "traffic_up_conversion_down"
+  | "traffic_up_conversion_up"
+  | "traffic_down_conversion_down"
+  | "conversion_up_payment_down"
+  | "traffic_up_payment_flat"
+  | "funnel_front_loss"
+  | "funnel_mid_loss"
+  | "funnel_late_loss"
+  | "cross_metric_contradiction"
+  | "yoy_up_mom_down"
+  | "high_traffic_low_conversion"
+  | "low_traffic_high_conversion"
+  | "mixed";
+
+export interface CrossMetricValueContext {
+  metric_key: string;
+  label: string;
+  current_value: number | null;
+  yoy_change: number | null;
+  yoy_unit: "ratio_change" | "percentage_point" | "absolute_change" | null;
+  mom_change: number | null;
+  mom_unit: "ratio_change" | "percentage_point" | "absolute_change" | null;
+  trend: "growth" | "decline" | "stable" | "unavailable";
+  evidence_refs: string[];
+  peer_median_value: number | null;
+  rank: number | null;
+}
+
+export interface CrossMetricFunnelStage extends DimensionFunnelStage {
+  peer_median_conversion_rate: number | null;
+  deviation_from_median: number | null;
+  bottleneck_score: number;
+  evidence_refs: string[];
+}
+
+export interface CrossMetricDiagnosis {
+  dimension_value: string;
+  business_state: string;
+  outcome_state: string;
+  traffic_state: string;
+  conversion_state: string;
+  payment_state: string;
+  traffic: CrossMetricValueContext;
+  booking: CrossMetricValueContext;
+  payment: CrossMetricValueContext;
+  conversion: CrossMetricValueContext;
+  funnel: CrossMetricFunnelStage[];
+  attribution_driver: DimensionGrowthAttribution["growth_driver"];
+  driver_explanation: string;
+  primary_bottleneck: {
+    stage: string;
+    stage_group: "front" | "mid" | "late";
+    current_conversion_rate: number | null;
+    peer_median_conversion_rate: number | null;
+    deviation_from_median: number | null;
+    yoy_delta: number | null;
+    mom_delta: number | null;
+    yoy_unit: "ratio_change" | "percentage_point" | null;
+    mom_unit: "ratio_change" | "percentage_point" | null;
+    evidence_refs: string[];
+  } | null;
+  secondary_signal: {
+    signal_type: string;
+    description: string;
+    evidence_refs: string[];
+  } | null;
+  diagnosis_patterns: CrossMetricDiagnosisPattern[];
+  outcome_metrics: Array<{
+    metric_key: string;
+    label: string;
+    value: number;
+    unit: string;
+    evidence_ref: string;
+  }>;
+  priority_score: number;
+  priority_level: "high" | "medium" | "low";
+  priority_factors: {
+    outcome_deterioration: number;
+    traffic_scale: number;
+    payment_scale: number;
+    funnel_deviation: number;
+    yoy_deterioration: number;
+    mom_deterioration: number;
+    contradiction: number;
+    growth_opportunity: number;
+  };
+  evidence_refs: string[];
+  limitations: string[];
+}
+
 export type DimensionDiagnosisLevel =
   | "high_priority"
   | "attention"
@@ -363,6 +455,14 @@ export interface AggregateAnalysisResult {
   opportunities: AggregateOpportunity[];
   business_insights: AggregateBusinessInsight[];
   growth_attribution: DimensionGrowthAttribution[];
+  cross_metric_diagnoses: CrossMetricDiagnosis[];
+  cross_metric_summary: {
+    scope: "safe_overall" | "dimension_only";
+    top_priority_dimensions: string[];
+    dominant_growth_driver: DimensionGrowthAttribution["growth_driver"];
+    common_bottleneck: string | null;
+    dimension_count: number;
+  } | null;
 }
 
 export interface DatasetPlaceholderResult {

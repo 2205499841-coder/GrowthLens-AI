@@ -94,13 +94,16 @@ SYSTEM_PROMPT = f"""你是 GrowthLens AI，一名面向增长运营人员的业�
 1. 只输出合法 JSON 对象，不要 Markdown、代码块或额外说明。
 2. 统一输出 core_conclusion、growth_explanation、key_issues、priority_actions、opportunities、limitations。user_level 的 growth_explanation 可以为 null。
 3. core_conclusion 只写一段，优先控制在 80—120 个中文字符，必须指出具体表现对象、问题节点或改善方向，禁止空泛总结。
-4. aggregate_metrics 必须基于 diagnostic_context.growth_attribution 解释支付用户变化，并指出后端已识别的主要贡献或抵消环节；不得只复述最终支付转化率。
+4. aggregate_metrics 必须以 diagnostic_context.cross_metric_diagnoses 为分析骨架，并严格按照 Business outcome → Growth driver → Funnel bottleneck → Cross-metric contradiction → Opportunity → Experiment/action 的顺序组织结论，不得逐条复述指标，也不得把结果指标写成根因。
 5. key_issues 最多 3 条；每条包含 issue、evidence、impact、confidence。
 6. priority_actions 最多 3 条；每条包含 action、applicable_to、reason、experiment、target_metric，并使用“建议验证”明确标识尚未被数据证明的原因或动作假设。动作必须同时关联问题节点、原因假设、验证方案和目标指标。
 7. opportunities 最多 2 条；优先使用后端已经识别的业务洞察和机会。
 8. evidence 中每条证据只输出 evidence_ref 和 interpretation。不得输出数字字段或自行撰写证据数值；后端会根据 evidence_ref 注入 display_value。
 9. 增长来源分类已经由后端确定。growth_explanation 不得输出、重新分类、覆盖或推断 dimension_value 和 growth_driver；最终字段由后端根据 evidence_ref 安全绑定并注入。
 10. main_contribution 必须直接使用 diagnostic_context.growth_attribution 中对应维度已有的贡献、拖累或最弱环节名称，并引用同一维度的阶段 evidence_ref。
+11. diagnosis_patterns、primary_bottleneck、priority_score 和 evidence_refs 均由后端确定，不得重排优先级、重新判断模式或覆盖瓶颈；优先解释 priority_score 最高的维度。
+12. 核心结论必须回答最重要的业务结果、规模或效率驱动、共同瓶颈和优先维度。若 cross_metric_summary.scope=dimension_only，必须以“从主要品类表现看”或同义表达开头，不得伪造整体汇总结论。
+13. 不得仅因为某阶段低于同环节中位数就将其写为核心结论；必须结合支付结果、规模变化、最终转化趋势和矛盾信号。
 
 JSON 结构示例（只表示结构，不是可引用事实）：
 {json.dumps(REPORT_JSON_EXAMPLE, ensure_ascii=False, indent=2)}
@@ -110,7 +113,7 @@ JSON 结构示例（只表示结构，不是可引用事实）：
 - 数字和单位只能由后端根据 evidence_ref 从 evidence_catalog.display_value 注入。不得自行计算、换算、缩写、四舍五入或修改。
 - 一条 evidence 可以引用多个 evidence_ref；后端将按引用顺序注入多个 display_value。
 - 不得引用输入之外的品类、渠道、用户画像、行业基准、业务事件或原因。
-- diagnostic_context.business_insights 是优先事实来源；不要重新发现一套与后端结论冲突的问题。
+- aggregate_metrics 以 diagnostic_context.cross_metric_diagnoses 为首要事实来源；business_insights 仅作补充，不得生成与联合诊断冲突的问题。
 - 原因解释必须写成待验证假设，不得当成已经证实的事实。
 - 避免“赋能、抓手、形成闭环、持续深耕、多维度协同、进一步提升用户体验”等空泛表达。
 - 不得声称读取过 Excel 或原始业务数据。
@@ -472,63 +475,58 @@ def _build_mock_aggregate_report(
 ) -> AIReportDraft:
     analysis = _require(request.aggregate_analysis, "aggregate_analysis")
     facts = {fact.reference: fact for fact in _build_evidence_catalog(request)}
-    selected_insights = analysis.business_insights[:3]
+    selected_diagnoses = analysis.cross_metric_diagnoses[:3]
     issues: list[DraftKeyIssue] = []
     actions: list[DraftPriorityAction] = []
-    for insight in selected_insights:
-        refs = [
-            f"aggregate.business_insights[{analysis.business_insights.index(insight)}]"
-            f".key_evidence[{index}]"
-            for index, _ in enumerate(insight.key_evidence[:2])
-        ]
-        evidence = [
-            DraftReportEvidence(
-                evidence_ref=[reference],
-                interpretation="该证据来自后端已确认的经营洞察。",
-            )
-            for reference in refs
-            if reference in facts
-        ]
+    for cross_diagnosis in selected_diagnoses:
+        refs = _cross_metric_issue_refs(cross_diagnosis, facts)
+        evidence = (
+            [
+                DraftReportEvidence(
+                    evidence_ref=refs,
+                    interpretation=(
+                        "该证据链同时覆盖业务结果、增长驱动和漏斗瓶颈。"
+                    ),
+                )
+            ]
+            if refs
+            else []
+        )
         if not evidence:
             continue
         issues.append(
             DraftKeyIssue(
-                issue=insight.core_judgement.rstrip("。"),
+                issue=_cross_metric_issue_text(cross_diagnosis),
                 evidence=evidence,
-                impact=_aggregate_impact_text(insight.priority),
+                impact=_cross_metric_impact_text(cross_diagnosis),
                 confidence=(
                     "high"
-                    if insight.priority in {"high_priority", "attention"}
+                    if cross_diagnosis.priority_level == "high"
                     else "medium"
                 ),
             )
         )
-        diagnosis = next(
-            (
-                item
-                for item in analysis.dimension_funnel_diagnostics
-                if item.dimension_value == insight.dimension_value
-            ),
-            None,
-        )
         target_metric = "支付转化率"
-        applicable_to = insight.dimension_value
-        if diagnosis and diagnosis.largest_declining_stage:
-            movement = diagnosis.largest_declining_stage
-            stage_name = f"{movement.from_label}→{movement.to_label}"
+        applicable_to = cross_diagnosis.dimension_value
+        if cross_diagnosis.primary_bottleneck:
+            stage_name = cross_diagnosis.primary_bottleneck.stage
             target_metric = f"{stage_name}阶段转化率"
-            applicable_to = f"{insight.dimension_value} · {stage_name}"
-        action, experiment = _aggregate_action_for_stage(
-            insight.dimension_value,
-            diagnosis,
+            applicable_to = (
+                f"{cross_diagnosis.dimension_value} · {stage_name}"
+            )
+        action, experiment = _aggregate_action_for_bottleneck(
+            cross_diagnosis.dimension_value,
+            cross_diagnosis.primary_bottleneck.stage
+            if cross_diagnosis.primary_bottleneck
+            else None,
         )
         actions.append(
             DraftPriorityAction(
                 action=action,
                 applicable_to=applicable_to,
                 reason=(
-                    "该环节被后端识别为主要拖累，建议验证信息理解成本或"
-                    "操作路径阻力是否造成流失。"
+                    f"后端联合诊断显示：{cross_diagnosis.business_state}"
+                    "建议验证该节点的信息理解成本或路径阻力是否放大业务影响。"
                 ),
                 experiment=experiment,
                 target_metric=target_metric,
@@ -589,17 +587,22 @@ def _build_mock_aggregate_report(
         )
         used_opportunity_targets.add(insight.dimension_value)
 
-    if selected_insights:
-        primary = selected_insights[0]
-        secondary = selected_insights[1] if len(selected_insights) > 1 else None
-        core_conclusion = (
-            f"{primary.dimension_value}当前最值得优先关注：{primary.core_judgement}"
+    if selected_diagnoses:
+        primary = selected_diagnoses[0]
+        summary = analysis.cross_metric_summary
+        scope_prefix = (
+            "从主要品类表现看，"
+            if summary and summary.scope == "dimension_only"
+            else "当前主要经营变化集中在："
         )
-        if secondary:
+        core_conclusion = (
+            f"{scope_prefix}{primary.dimension_value}{primary.outcome_state}"
+            f"{primary.driver_explanation}"
+        )
+        if summary and summary.common_bottleneck:
             core_conclusion += (
-                f"同时，{secondary.dimension_value}{secondary.core_judgement}"
+                f"共同需要优先验证的漏斗节点是{summary.common_bottleneck}。"
             )
-        core_conclusion += "建议先处理主要拖累节点，再验证改善品类的扩量空间。"
     else:
         dimension_label = (
             analysis.dimensions[0].label if analysis.dimensions else "业务维度"
@@ -627,7 +630,7 @@ def _build_mock_growth_explanation(
     facts: dict[str, EvidenceFact],
 ) -> DraftGrowthExplanation | None:
     preferred_dimensions = [
-        item.dimension_value for item in analysis.business_insights
+        item.dimension_value for item in analysis.cross_metric_diagnoses
     ]
     ordered = sorted(
         enumerate(analysis.growth_attribution),
@@ -715,28 +718,89 @@ def _growth_explanation_stage_reference(
     return None
 
 
-def _aggregate_action_for_stage(
-    dimension_value: str,
+def _cross_metric_issue_refs(
     diagnosis,
+    facts: dict[str, EvidenceFact],
+) -> list[str]:
+    groups = [
+        diagnosis.payment.evidence_refs,
+        diagnosis.traffic.evidence_refs,
+        diagnosis.conversion.evidence_refs,
+        (
+            diagnosis.primary_bottleneck.evidence_refs
+            if diagnosis.primary_bottleneck
+            else []
+        ),
+        (
+            diagnosis.secondary_signal.evidence_refs
+            if diagnosis.secondary_signal
+            else []
+        ),
+    ]
+    refs = []
+    for group in groups:
+        preferred = sorted(
+            group,
+            key=lambda ref: (
+                0 if "yoy" in ref else 1 if "mom" in ref else 2
+            ),
+        )
+        reference = next((ref for ref in preferred if ref in facts), None)
+        if reference and reference not in refs:
+            refs.append(reference)
+        if len(refs) >= 4:
+            break
+    return refs
+
+
+def _cross_metric_impact_text(diagnosis) -> str:
+    if diagnosis.priority_level == "high":
+        return (
+            "该维度同时具备较高业务规模和明确负向信号，"
+            "若趋势延续，可能持续影响支付结果。"
+        )
+    if "cross_metric_contradiction" in diagnosis.diagnosis_patterns:
+        return (
+            "结果与过程指标方向不一致，单看最终转化可能掩盖规模或局部漏斗压力。"
+        )
+    if diagnosis.priority_level == "medium":
+        return "该问题具备一定业务影响，建议结合对应漏斗节点优先验证。"
+    return "当前影响相对可控，可作为后续优化或增长机会继续观察。"
+
+
+def _cross_metric_issue_text(diagnosis) -> str:
+    issue = (
+        f"{diagnosis.dimension_value}："
+        f"{diagnosis.business_state.rstrip('。')}"
+    )
+    if diagnosis.primary_bottleneck:
+        issue += f"；主要漏斗瓶颈为{diagnosis.primary_bottleneck.stage}"
+    if diagnosis.secondary_signal:
+        issue += f"；{diagnosis.secondary_signal.description.rstrip('。')}"
+    return issue + "。"
+
+
+def _aggregate_action_for_bottleneck(
+    dimension_value: str,
+    stage_name: str | None,
 ) -> tuple[str, str]:
-    movement = diagnosis.largest_declining_stage if diagnosis else None
-    if movement is None:
+    if stage_name is None:
         return (
             f"建议验证{dimension_value}的流量承接与支付路径，定位主要流失原因。",
             "按关键漏斗节点拆分复盘用户路径，并对候选方案进行小范围对照验证。",
         )
-    stage_name = f"{movement.from_label}→{movement.to_label}"
-    if "商详" in movement.from_label and "预约" in movement.to_label:
+    from_label, _, to_label = stage_name.partition("→")
+    if "商详" in from_label and "预约" in to_label:
         return (
             f"建议验证{dimension_value}商详页套餐信息、价格说明和预约入口展示。",
             "对照验证不同商详信息结构、权益说明和预约入口位置。",
         )
-    if "预约" in movement.from_label and "SKU" in movement.to_label.upper():
+    if "预约" in from_label and "SKU" in to_label.upper():
         return (
             f"建议验证{dimension_value}预约后的套餐选择引导和默认推荐逻辑。",
             "对照验证不同套餐排序、推荐说明和选择路径。",
         )
-    if "提交" in movement.from_label and "支付" in movement.to_label:
+    if "提交" in from_label and "支付" in to_label:
         return (
             f"建议验证{dimension_value}订单确认后的支付信息和操作路径。",
             "对照验证支付说明、权益提醒和支付入口呈现方式。",
@@ -810,6 +874,16 @@ def _build_diagnostic_context(request: AIReportRequest) -> dict[str, Any]:
             item.model_dump(mode="json")
             for item in analysis.business_insights[:5]
         ],
+        "cross_metric_summary": (
+            analysis.cross_metric_summary.model_dump(mode="json")
+            if analysis.cross_metric_summary
+            else None
+        ),
+        "cross_metric_diagnoses": [
+            item.model_dump(mode="json")
+            for item in analysis.cross_metric_diagnoses
+            if item.dimension_value in selected_values
+        ],
         "growth_attribution": [
             item.model_dump(mode="json")
             for item in analysis.growth_attribution
@@ -846,6 +920,9 @@ def _build_diagnostic_context(request: AIReportRequest) -> dict[str, Any]:
 
 def _select_aggregate_dimension_values(analysis) -> set[str]:
     ordered_values: list[str] = []
+    for diagnosis in analysis.cross_metric_diagnoses:
+        if diagnosis.dimension_value not in ordered_values:
+            ordered_values.append(diagnosis.dimension_value)
     for insight in analysis.business_insights:
         if insight.dimension_value not in ordered_values:
             ordered_values.append(insight.dimension_value)
@@ -1032,6 +1109,35 @@ def _build_aggregate_evidence_catalog(analysis) -> list[EvidenceFact]:
                     outcome.unit,
                 )
             )
+        for change_index, change in enumerate(item.scale_changes):
+            for field_name, period_label, value, unit in (
+                (
+                    "yoy_change",
+                    "同比",
+                    change.yoy_change,
+                    change.yoy_unit,
+                ),
+                (
+                    "mom_change",
+                    "环比",
+                    change.mom_change,
+                    change.mom_unit,
+                ),
+            ):
+                if value is None or unit is None:
+                    continue
+                label = f"{item.dimension_value}{change.label}{period_label}"
+                facts.append(
+                    EvidenceFact(
+                        reference=(
+                            f"{prefix}.scale_changes[{change_index}]"
+                            f".{field_name}"
+                        ),
+                        label=label,
+                        display_value=f"{label} {_display(value, unit)}",
+                        unit=unit,
+                    )
+                )
     for index, diagnosis in enumerate(analysis.dimension_funnel_diagnostics):
         if diagnosis.dimension_value not in selected_values:
             continue
@@ -1051,24 +1157,31 @@ def _build_aggregate_evidence_catalog(analysis) -> list[EvidenceFact]:
         ):
             value = getattr(diagnosis, field_name)
             if value is not None and unit is not None:
+                fact_label = f"{diagnosis.dimension_value}{label}"
                 facts.append(
-                    _fact(
-                        f"{prefix}.{field_name}",
-                        f"{diagnosis.dimension_value}{label}",
-                        value,
-                        unit,
+                    EvidenceFact(
+                        reference=f"{prefix}.{field_name}",
+                        label=fact_label,
+                        display_value=f"{fact_label} {_display(value, unit)}",
+                        unit=unit,
                     )
                 )
         for stage_index, stage in enumerate(diagnosis.stages):
             stage_prefix = f"{prefix}.stages[{stage_index}]"
             stage_label = f"{stage.from_label}→{stage.to_label}"
             if stage.current_conversion_rate is not None:
+                fact_label = (
+                    f"{diagnosis.dimension_value}{stage_label}转化率"
+                )
                 facts.append(
-                    _fact(
-                        stage_prefix + ".current_conversion_rate",
-                        f"{diagnosis.dimension_value}{stage_label}转化率",
-                        stage.current_conversion_rate,
-                        "ratio",
+                    EvidenceFact(
+                        reference=stage_prefix + ".current_conversion_rate",
+                        label=fact_label,
+                        display_value=(
+                            f"{fact_label} "
+                            f"{_display(stage.current_conversion_rate, 'ratio')}"
+                        ),
+                        unit="ratio",
                     )
                 )
             for field_name, period_label, unit in (
@@ -1077,12 +1190,17 @@ def _build_aggregate_evidence_catalog(analysis) -> list[EvidenceFact]:
             ):
                 value = getattr(stage, field_name)
                 if value is not None and unit is not None:
+                    fact_label = (
+                        f"{diagnosis.dimension_value}{stage_label}{period_label}"
+                    )
                     facts.append(
-                        _fact(
-                            f"{stage_prefix}.{field_name}",
-                            f"{diagnosis.dimension_value}{stage_label}{period_label}",
-                            value,
-                            unit,
+                        EvidenceFact(
+                            reference=f"{stage_prefix}.{field_name}",
+                            label=fact_label,
+                            display_value=(
+                                f"{fact_label} {_display(value, unit)}"
+                            ),
+                            unit=unit,
                         )
                     )
     for index, attribution in enumerate(analysis.growth_attribution):
@@ -1203,6 +1321,15 @@ def _validate_report_draft(
                 + "、".join(sorted(unknown_refs))
             )
 
+    if request.dataset_type == "aggregate_metrics":
+        analysis = _require(request.aggregate_analysis, "aggregate_analysis")
+        for issue_index, issue in enumerate(draft.key_issues):
+            dimensions = _issue_reference_dimensions(analysis, issue)
+            if len(dimensions) > 1:
+                raise AIReportProviderError(
+                    f"AI 报告字段 key_issues[{issue_index}] 混用了不同维度的证据。"
+                )
+
     for field_path, text in _draft_content_fields(draft):
         unsupported = _numeric_mentions(text) - allowed_mentions
         if not unsupported:
@@ -1252,6 +1379,7 @@ def _hydrate_report_evidence(
     if growth_limitation and growth_limitation not in limitations:
         limitations = [*limitations[:4], growth_limitation]
 
+    ordered_issues = _order_key_issues(request, draft.key_issues)
     return AIReportResponse(
         core_conclusion=draft.core_conclusion,
         growth_explanation=growth_explanation,
@@ -1262,7 +1390,7 @@ def _hydrate_report_evidence(
                 impact=issue.impact,
                 confidence=issue.confidence,
             )
-            for issue in draft.key_issues
+            for issue in ordered_issues
         ],
         priority_actions=[
             PriorityAction(
@@ -1424,6 +1552,36 @@ def _aggregate_reference_dimension(analysis, reference: str) -> str | None:
             return None
         return getattr(items[index], "dimension_value", None)
     return None
+
+
+def _issue_reference_dimensions(analysis, issue: DraftKeyIssue) -> set[str]:
+    return {
+        dimension
+        for evidence in issue.evidence
+        for reference in evidence.evidence_ref
+        if (dimension := _aggregate_reference_dimension(analysis, reference))
+    }
+
+
+def _order_key_issues(
+    request: AIReportRequest,
+    issues: list[DraftKeyIssue],
+) -> list[DraftKeyIssue]:
+    if request.dataset_type != "aggregate_metrics":
+        return issues
+    analysis = _require(request.aggregate_analysis, "aggregate_analysis")
+    priority = {
+        item.dimension_value: index
+        for index, item in enumerate(analysis.cross_metric_diagnoses)
+    }
+
+    def order(issue: DraftKeyIssue) -> int:
+        dimensions = _issue_reference_dimensions(analysis, issue)
+        if len(dimensions) != 1:
+            return len(priority)
+        return priority.get(next(iter(dimensions)), len(priority))
+
+    return sorted(issues, key=order)
 
 
 def _has_matching_stage_reference(
